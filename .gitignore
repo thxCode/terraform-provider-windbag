@@ -1,0 +1,63 @@
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+.dapper
+*.log
+
+# Directories
+## Output of build progress
+dist
+bin
+modules-dev
+website/vendor
+## Binaries of build service
+sbin
+## Cache of go build/golangci-lint
+.cache
+## Cache of docker build
+.docker
+## Configuration of k3s
+.config
+## Configuration of kubectl
+.kube
+## Editor and IDE paraphernalia
+.idea
+## Workspace of Terraform
+.terraform
+## Workspace of Vagrant
+.vagrant
+## Cache of bundle generation
+.bundle
+## Modules of NodeJS
+node_modules
+
+# Files
+## Dapper temporary files
+**/Dockerfile.dapper*
+!**/Dockerfile.dapper
+## Test binary, build with `go test -c`
+*.test
+## Output of the go coverage tool, specifically when used with LiteIDE
+*.out
+## Editor and IDE paraphernalia
+*.swp
+*.swo
+*~
+.vim*
+.bash*
+*.iml
+*.backup
+## Mac storage information
+.DS_Store
+## Lock file
+*.lock
+## Terraform artifacts
+*.hcl
+*.tfstate
+*.tfplan
+
+# Keep windows files with windows line endings
+*.winfile eol=crlf
