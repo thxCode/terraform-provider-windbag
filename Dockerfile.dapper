@@ -1,0 +1,50 @@
+FROM golang:1.14.12-buster as build
+RUN apt-get update -qq && apt-get install -y --no-install-recommends \
+        xz-utils \
+        unzip \
+        netcat \
+    && rm -rf /var/lib/apt/lists/*
+
+# -- for make rules
+## install docker client
+RUN apt-get update -qq && apt-get install -y --no-install-recommends \
+        apt-transport-https \
+        ca-certificates \
+        curl \
+        gnupg \
+    && rm -rf /var/lib/apt/lists/*; \
+    \
+    curl -fsSL https://download.docker.com/linux/debian/gpg | apt-key add - >/dev/null; \
+    echo "deb [arch=$(dpkg --print-architecture)] https://download.docker.com/linux/debian buster stable" > /etc/apt/sources.list.d/docker.list; \
+    \
+    apt-get update -qq && apt-get install -y --no-install-recommends \
+        docker-ce-cli=5:19.03.* \
+    && rm -rf /var/lib/apt/lists/*
+## install ginkgo
+RUN GO111MODULE=on go get github.com/onsi/ginkgo/ginkgo@v1.14.2
+## install golangci-lint
+RUN curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b "$(go env GOPATH)/bin" v1.32.2
+## install goreleaser
+RUN curl -sSfL https://install.goreleaser.com/github.com/goreleaser/goreleaser.sh | sh -s -- -b "$(go env GOPATH)/bin" v0.155.0
+## install terraform
+RUN curl -sSfL "https://releases.hashicorp.com/terraform/0.14.4/terraform_0.14.4_$(go env GOOS)_$(go env GOARCH).zip" -o /tmp/terraform.zip \
+    && unzip -o /tmp/terraform.zip -d /tmp \
+    && chmod +x /tmp/terraform && mv /tmp/terraform "$(go env GOPATH)/terraform"
+## install manifest-tool
+RUN curl -sSfL "https://github.com/estesp/manifest-tool/releases/download/v1.0.3/manifest-tool-$(go env GOOS)-$(go env GOARCH)" -o "$(go env GOPATH)/bin/manifest-tool" \
+    && chmod +x "$(go env GOPATH)/bin/manifest-tool"
+## install kubectl
+RUN curl -sSfL "https://storage.googleapis.com/kubernetes-release/release/v1.19.4/bin/$(go env GOOS)/$(go env GOARCH)/kubectl" -o "$(go env GOPATH)/bin/kubectl" \
+    && chmod +x "$(go env GOPATH)/bin/kubectl"
+# -- for make rules
+
+# -- for dapper
+ENV DAPPER_RUN_ARGS --privileged --network host
+ENV DAPPER_ENV CROSS DOCKER_USERNAME DOCKER_PASSWORD ONLY_MANIFEST ONLY_MANIFEST IGNORE_MISSING GO111MODULE DRONE_TAG REPO TAG OS ARCH IMAGE_NAME DIRTY_CHECK LOG_LEVEL LOG_COLORFUL
+ENV DAPPER_SOURCE /go/src/github.com/thxcode/terraform-provider-windbag
+ENV DAPPER_OUTPUT ./bin ./dist ./docs
+ENV DAPPER_DOCKER_SOCKET true
+# -- for dapper
+
+WORKDIR ${DAPPER_SOURCE}
+ENTRYPOINT ["make", "-se"]
