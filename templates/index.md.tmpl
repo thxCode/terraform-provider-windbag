@@ -55,6 +55,10 @@ I created a script to setup the SSH service on Windows, please have a shot if yo
 
 ## Example With [Alibaba Cloud](https://registry.terraform.io/providers/aliyun/alicloud/latest/docs) Provider
 
+{{tffile "examples/provider/integration/alicloud.tf"}}
+
+### generate terraform plan
+
 ```bash
 
 $ tf plan \
@@ -70,7 +74,5 @@ $ tf plan \
    --var 'image_registry_password=...'
 
 ```
-
-{{tffile "examples/provider/integration/alicloud.tf"}}
 
 {{ .SchemaMarkdown | trimspace }}

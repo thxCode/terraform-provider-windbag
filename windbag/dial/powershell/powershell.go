@@ -98,7 +98,7 @@ func (ps *PowerShell) ExecuteScript(ctx context.Context, id string, stdout, stde
 	if len(scriptPath) == 0 {
 		return errors.New("can't exec blank script")
 	}
-	log.Printf("[INFO] [PowerShell -(%s)- Stdin]: %s, %v", id, scriptPath, scriptArgs)
+	log.Printf("[INFO] [PowerShell -(%s)- Stdin]: %s, %v\n", id, scriptPath, scriptArgs)
 
 	if ps.executed {
 		return errors.New("cannot re-execute the powershell")
@@ -119,7 +119,7 @@ func (ps *PowerShell) ExecuteScript(ctx context.Context, id string, stdout, stde
 		return errors.Wrap(err, "could not take over the PowerShell's stderr stream")
 	}
 
-	var eg errgroup.Group
+	var eg, egctx = errgroup.WithContext(ctx)
 	eg.Go(func() error {
 		defer utils.HandleCrash()
 		var buf = make([]byte, 1<<10)
@@ -130,13 +130,19 @@ func (ps *PowerShell) ExecuteScript(ctx context.Context, id string, stdout, stde
 				if stdout != nil {
 					stdout(ret)
 				}
-				log.Printf("[DEBUG] [PowerShell -(%s)- Stdout]: %s\n", id, ret)
+				log.Printf("[TRACE] [PowerShell -(%s)- Stdout]: %s\n", id, ret)
 			}
 			if err != nil {
 				if io.EOF != err && io.ErrClosedPipe != err {
 					return err
 				}
 				break
+			}
+
+			select {
+			case <-egctx.Done():
+				break
+			default:
 			}
 		}
 		return nil
@@ -159,6 +165,12 @@ func (ps *PowerShell) ExecuteScript(ctx context.Context, id string, stdout, stde
 				}
 				break
 			}
+
+			select {
+			case <-egctx.Done():
+				break
+			default:
+			}
 		}
 		return nil
 	})
@@ -178,7 +190,7 @@ func (ps *PowerShell) ExecuteCommand(ctx context.Context, id string, stdout, std
 	if len(command) == 0 {
 		return errors.New("can't exec blank command")
 	}
-	log.Printf("[INFO] [PowerShell -(%s)- Stdin]: %s", id, command)
+	log.Printf("[INFO] [PowerShell -(%s)- Stdin]: %s\n", id, command)
 
 	if ps.executed {
 		return errors.New("cannot re-execute the powershell")
@@ -198,7 +210,7 @@ func (ps *PowerShell) ExecuteCommand(ctx context.Context, id string, stdout, std
 		return errors.Wrap(err, "could not take over the PowerShell's stderr stream")
 	}
 
-	var eg errgroup.Group
+	var eg, egctx = errgroup.WithContext(ctx)
 	eg.Go(func() error {
 		defer utils.HandleCrash()
 		var buf = make([]byte, 1<<10)
@@ -209,13 +221,19 @@ func (ps *PowerShell) ExecuteCommand(ctx context.Context, id string, stdout, std
 				if stdout != nil {
 					stdout(ret)
 				}
-				log.Printf("[DEBUG] [PowerShell -(%s)- Stdout]: %s\n", id, ret)
+				log.Printf("[TRACE] [PowerShell -(%s)- Stdout]: %s\n", id, ret)
 			}
 			if err != nil {
 				if io.EOF != err && io.ErrClosedPipe != err {
 					return err
 				}
 				break
+			}
+
+			select {
+			case <-egctx.Done():
+				break
+			default:
 			}
 		}
 		return nil
@@ -237,6 +255,12 @@ func (ps *PowerShell) ExecuteCommand(ctx context.Context, id string, stdout, std
 					return err
 				}
 				break
+			}
+
+			select {
+			case <-egctx.Done():
+				break
+			default:
 			}
 		}
 		return nil
@@ -299,7 +323,7 @@ func (psc *Commands) Execute(ctx context.Context, id string, command string) (st
 	if len(command) == 0 {
 		return "", "", errors.New("could not execute blank cmd")
 	}
-	log.Printf("[INFO] [PowerShell -(%s)- Stdin]: %s", id, command)
+	log.Printf("[INFO] [PowerShell -(%s)- Stdin]: %s\n", id, command)
 	command = strings.Replace(command, "\n", " ", -1) // narrow the command into one line
 
 	var commandSignal = newCommandSignal()
@@ -312,8 +336,8 @@ func (psc *Commands) Execute(ctx context.Context, id string, command string) (st
 	var (
 		commandStdout = &strings.Builder{}
 		commandStderr = &strings.Builder{}
-		eg            errgroup.Group
 	)
+	var eg, egctx = errgroup.WithContext(ctx)
 	eg.Go(func() error {
 		var buf = make([]byte, 1<<10)
 		for {
@@ -322,7 +346,7 @@ func (psc *Commands) Execute(ctx context.Context, id string, command string) (st
 				var ret = strings.TrimSuffix(string(buf[:readSize]), commandSignal)
 				if ret != "" {
 					commandStdout.WriteString(ret)
-					log.Printf("[DEBUG] [PowerShell -(%s)- Stdout]: %s\n", id, ret)
+					log.Printf("[TRACE] [PowerShell -(%s)- Stdout]: %s\n", id, ret)
 				}
 				if len(ret) != readSize {
 					break
@@ -333,6 +357,12 @@ func (psc *Commands) Execute(ctx context.Context, id string, command string) (st
 					return err
 				}
 				break
+			}
+
+			select {
+			case <-egctx.Done():
+				break
+			default:
 			}
 		}
 		return nil
@@ -356,6 +386,12 @@ func (psc *Commands) Execute(ctx context.Context, id string, command string) (st
 					return err
 				}
 				break
+			}
+
+			select {
+			case <-egctx.Done():
+				break
+			default:
 			}
 		}
 		return nil

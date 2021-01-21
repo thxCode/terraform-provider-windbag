@@ -5,11 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/docker/docker/api/types"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
-
-	"github.com/thxcode/terraform-provider-windbag/windbag/worker"
 )
 
 func init() {
@@ -46,9 +43,7 @@ func registerSchema(p *schema.Provider) {
 }
 
 func registerDataSources(p *schema.Provider) {
-	p.DataSourcesMap = map[string]*schema.Resource{
-		"windbag_registry": dataSourceWindbagRegistry(),
-	}
+	p.DataSourcesMap = map[string]*schema.Resource{}
 }
 
 func registerResources(p *schema.Provider) {
@@ -57,19 +52,11 @@ func registerResources(p *schema.Provider) {
 	}
 }
 
-type provider struct {
-	// data sources
-	registryAuths map[string]types.AuthConfig
-	workers       map[string]worker.Dialer
-}
+type provider struct{}
 
 func configure(version string, p *schema.Provider) func(context.Context, *schema.ResourceData) (interface{}, diag.Diagnostics) {
 	return func(_ context.Context, d *schema.ResourceData) (interface{}, diag.Diagnostics) {
-		var p = &provider{
-			registryAuths: make(map[string]types.AuthConfig),
-			workers:       make(map[string]worker.Dialer),
-		}
-
+		var p = &provider{}
 		return p, nil
 	}
 }

@@ -1,11 +1,11 @@
-package worker
+package dial
 
 import (
 	"context"
 	"io"
 	"net"
 
-	"github.com/thxcode/terraform-provider-windbag/windbag/worker/powershell"
+	"github.com/thxcode/terraform-provider-windbag/windbag/dial/powershell"
 )
 
 // Dialer specifies a closable dialer.

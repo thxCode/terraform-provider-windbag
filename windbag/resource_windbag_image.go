@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
@@ -16,11 +17,11 @@ import (
 	"github.com/pkg/errors"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/thxcode/terraform-provider-windbag/windbag/dial"
+	"github.com/thxcode/terraform-provider-windbag/windbag/dial/powershell"
 	"github.com/thxcode/terraform-provider-windbag/windbag/docker"
 	"github.com/thxcode/terraform-provider-windbag/windbag/template"
 	"github.com/thxcode/terraform-provider-windbag/windbag/utils"
-	"github.com/thxcode/terraform-provider-windbag/windbag/worker"
-	"github.com/thxcode/terraform-provider-windbag/windbag/worker/powershell"
 )
 
 func resourceWindbagImage() *schema.Resource {
@@ -34,6 +35,11 @@ func resourceWindbagImage() *schema.Resource {
 
 		Importer: &schema.ResourceImporter{
 			StateContext: schema.ImportStatePassthroughContext,
+		},
+
+		Timeouts: &schema.ResourceTimeout{
+			Create: schema.DefaultTimeout(1 * time.Hour),
+			Read:   schema.DefaultTimeout(2 * time.Hour),
 		},
 
 		Schema: map[string]*schema.Schema{
@@ -107,7 +113,36 @@ func resourceWindbagImage() *schema.Resource {
 				Optional:    true,
 				Default:     true,
 			},
-			"build_worker": {
+			"registry": {
+				Description: "Specify the authentication registry of registry.",
+				Type:        schema.TypeSet,
+				Optional:    true,
+				Elem: &schema.Resource{
+					Schema: map[string]*schema.Schema{
+						"address": {
+							Description: "Specify the address of the registry.",
+							Type:        schema.TypeString,
+							Optional:    true,
+							Default:     "docker.io",
+							ForceNew:    true,
+						},
+						"username": {
+							Description: "Specify the username of the registry credential.",
+							Type:        schema.TypeString,
+							Required:    true,
+							ForceNew:    true,
+						},
+						"password": {
+							Description: "Specify the password of the registry credential.",
+							Type:        schema.TypeString,
+							Required:    true,
+							ForceNew:    true,
+							Sensitive:   true,
+						},
+					},
+				},
+			},
+			"worker": {
 				Description: "Specify the workers to build.",
 				Type:        schema.TypeSet,
 				Required:    true,
@@ -171,6 +206,64 @@ func resourceWindbagImage() *schema.Resource {
 								},
 							},
 						},
+						"build_context": {
+							Description: "Observed the build context of worker.",
+							Type:        schema.TypeSet,
+							Computed:    true,
+							Elem: &schema.Resource{
+								Schema: map[string]*schema.Schema{
+									"dockerfile": {
+										Description: "Observed the dockerfile of build context",
+										Type:        schema.TypeString,
+										Computed:    true,
+									},
+									"buildpath": {
+										Description: "Observed the buildpath of build context",
+										Type:        schema.TypeString,
+										Computed:    true,
+									},
+								},
+							},
+						},
+						"build_information": {
+							Description: "Observed the build information of worker.",
+							Type:        schema.TypeSet,
+							Computed:    true,
+							Elem: &schema.Resource{
+								Schema: map[string]*schema.Schema{
+									"os_major": {
+										Description: "Observed the major version number of worker.",
+										Type:        schema.TypeInt,
+										Computed:    true,
+									},
+									"os_minor": {
+										Description: "Observed the minor version number of worker.",
+										Type:        schema.TypeInt,
+										Computed:    true,
+									},
+									"os_build": {
+										Description: "Observed the build number of worker.",
+										Type:        schema.TypeInt,
+										Computed:    true,
+									},
+									"os_ubr": {
+										Description: "Observed the UBR version number of worker.",
+										Type:        schema.TypeInt,
+										Computed:    true,
+									},
+									"os_release": {
+										Description: "Observed the release ID of worker.",
+										Type:        schema.TypeString,
+										Computed:    true,
+									},
+									"os_arch": {
+										Description: "Observed the arch of worker.",
+										Type:        schema.TypeString,
+										Computed:    true,
+									},
+								},
+							},
+						},
 					},
 				},
 			},
@@ -179,43 +272,29 @@ func resourceWindbagImage() *schema.Resource {
 }
 
 func resourceWindbagImageCreate(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
-	var p = meta.(*provider)
-	var id string
-	var buildOpts = types.ImageBuildOptions{
-		Version:   types.BuilderV1,
-		BuildArgs: map[string]*string{},
-		Labels:    map[string]string{},
-	}
-
-	// parse build options
-
-	// tags
-	buildOpts.Tags = utils.ToStringSlice(d.Get("tag"))
-	id = resourceWindbagImageID(buildOpts.Tags[len(buildOpts.Tags)-1]) // use the last item as the resource ID
-	// args
-	if v, ok := d.GetOk("build_arg"); ok {
-		for argName, vv := range v.(map[string]interface{}) {
-			var argVal = vv.(string)
-			buildOpts.BuildArgs[argName] = &argVal
+	var workers = utils.ToInterfaceSlice(d.Get("worker"))
+	var workerDialers = make(map[string]dial.Dialer, len(workers))
+	for _, w := range workers {
+		var worker = utils.ToStringInterfaceMap(w)
+		var workerAddress = utils.ToString(worker["address"])
+		var workerSSH = utils.ToStringInterfaceMap(worker["ssh"])
+		var workerDialer, err = dialWorker(workerAddress, workerSSH)
+		if err != nil {
+			return diag.Errorf("failed to dial worker %s via SSH: %v", workerAddress, err)
 		}
+		workerDialers[workerAddress] = workerDialer
 	}
-	// labels
-	if v, ok := d.GetOk("label"); ok {
-		for labelName, vv := range v.(map[string]interface{}) {
-			var labelVal = vv.(string)
-			buildOpts.Labels[labelName] = labelVal
+	defer func() {
+		for _, d := range workerDialers {
+			_ = d.Close()
 		}
-	}
-	// additions
-	buildOpts.ForceRemove = utils.ToBool(d.Get("force_rm"))
-	buildOpts.Isolation = container.Isolation(utils.ToString(d.Get("isolation")))
-	buildOpts.NoCache = utils.ToBool(d.Get("no_cache"))
-	buildOpts.Remove = utils.ToBool(d.Get("rm"))
-	buildOpts.Target = utils.ToString(d.Get("target"))
+	}()
 
-	// construct build context
+	var id = func() string {
+		var tags = utils.ToStringSlice(d.Get("tag"))
+		return resourceWindbagImageID(tags[len(tags)-1]) // use the last item as the resource ID
+	}()
 
-	// buildpath
 	var buildpath, err = func(p string) (dPath string, dErr error) {
 		dPath, dErr = utils.NormalizePath(p)
 		if dErr != nil {
@@ -232,7 +311,7 @@ func resourceWindbagImageCreate(ctx context.Context, d *schema.ResourceData, met
 	if err != nil {
 		return diag.Errorf("failed to get the buildpath of image %s: %v", id, err)
 	}
-	// dockerfile path
+
 	dockerfilePath, err := func(p string) (fPath string, fErr error) {
 		if p == "" {
 			p = filepath.Join(buildpath, "Dockerfile")
@@ -253,26 +332,21 @@ func resourceWindbagImageCreate(ctx context.Context, d *schema.ResourceData, met
 		return diag.Errorf("failed to get the dockerfile of image %s: %v", id, err)
 	}
 
-	// build
+	/*
+		construct context and retrieve information
+	*/
 
-	log.Printf("[DEBUG] Building image %q\n", id)
-	var buildWorkersInter = d.Get("build_worker").(*schema.Set).List()
-	eg, egctx := errgroup.WithContext(ctx)
-	for _, vv := range buildWorkersInter {
-		var buildWorker = vv.(map[string]interface{})
+	log.Printf("[INFO] Shipping build context %q\n", id)
+	for _, w := range workers {
+		var buildWorker = utils.ToStringInterfaceMap(w)
 		var workerAddress = utils.ToString(buildWorker["address"])
-		var dialer, err = p.serviceSSHDialWorker(egctx, workerAddress, buildWorker["ssh"].(*schema.Set).List()[0].(map[string]interface{}))
-		if err != nil {
-			return diag.Errorf("failed to dial worker %s via SSH: %v", workerAddress, err)
-		}
-
 		var workerID = fmt.Sprintf("%s/%s", workerAddress, id)
+		var workerWorkDir = utils.ToString(buildWorker["work_dir"])
 
-		eg.Go(func() error {
-			var workerWorkDir = utils.ToString(buildWorker["work_dir"])
-
-			// create remote build context
-			var err = dialer.PowerShell(egctx, nil, func(ctx context.Context, ps *powershell.PowerShell) error {
+		// construct context
+		if info := utils.ToStringInterfaceMap(buildWorker["build_context"]); len(info) == 0 {
+			var workerDialer = workerDialers[workerAddress]
+			var err = workerDialer.PowerShell(ctx, nil, func(ctx context.Context, ps *powershell.PowerShell) error {
 				var psc, err = ps.Commands()
 				if err != nil {
 					return errors.Wrap(err, "failed to setup interaction")
@@ -284,13 +358,9 @@ func resourceWindbagImageCreate(ctx context.Context, d *schema.ResourceData, met
 				}()
 
 				// prepare host build directory
-				var workDir = "C:/etc/windbag"
-				if v, ok := d.GetOk("work_dir"); ok {
-					workDir = utils.ToString(v)
-				}
-				var command = template.TryRender(
+				command := template.TryRender(
 					map[string]interface{}{
-						"WorkDir": workDir,
+						"WorkDir": workerWorkDir,
 					},
 					`$Path = "{{ .WorkDir }}";
 if (Test-Path -Path "$Path/buildpath") {
@@ -307,74 +377,63 @@ if (Test-Path -Path "$Path/dockerfile") {
 New-Item -Force -ItemType Directory -Path "$Path/dockerfile" | Out-Null;
 `,
 				)
-				_, stderr, err := psc.Execute(ctx, id, command)
+				_, stderr, err := psc.Execute(ctx, workerID, command)
 				if err != nil {
 					return errors.Wrap(err, "failed to execute workdir creation")
 				}
 				if stderr != "" {
 					return errors.Errorf("error executing workdir creation: %s", stderr)
 				}
-				return nil
-			})
-			if err != nil {
-				return errors.Wrapf(err, "failed to craete remote build context of worker %s", workerAddress)
-			}
 
-			// transfer build path archive
-			buildpathArchive, err := docker.GetBuildpathArchive(buildpath, dockerfilePath)
-			if err != nil {
-				return errors.Wrap(err, "failed to retrieve the buildpath")
-			}
-			var buildpathArchiveShippedDst = filepath.Join(workerWorkDir, "buildpath", fmt.Sprintf("%s.zip", id))
-			_, err = dialer.Copy(egctx, buildpathArchive, buildpathArchiveShippedDst)
-			if err != nil {
-				return errors.Wrapf(err, "failed to ship the buildpath to worker %s", workerAddress)
-			}
-
-			// expand build path archive
-			var buildpathArchiveExpandDst = filepath.Join(workerWorkDir, "buildpath", id)
-			err = dialer.PowerShell(egctx, nil, func(ctx context.Context, ps *powershell.PowerShell) error {
-				var psc, err = ps.Commands()
+				// transfer build path archive
+				buildpathArchive, err := docker.GetBuildpathArchive(buildpath, dockerfilePath)
 				if err != nil {
-					return errors.Wrap(err, "failed to setup interaction")
+					return errors.Wrap(err, "failed to retrieve the buildpath")
 				}
-				defer func() {
-					if err := psc.Close(); err != nil {
-						log.Printf("[ERROR] Failed to close interaction: %v\n", err)
-					}
-				}()
-
-				var command = template.TryRender(
+				var buildpathArchiveShippedDst = filepath.Join(workerWorkDir, "buildpath", fmt.Sprintf("%s.zip", id))
+				_, err = workerDialer.Copy(ctx, buildpathArchive, buildpathArchiveShippedDst)
+				if err != nil {
+					return errors.Wrapf(err, "failed to ship the buildpath to worker %s", workerAddress)
+				}
+				// expand build path archive
+				var buildpathArchiveExpandDst = filepath.Join(workerWorkDir, "buildpath", id)
+				command = template.TryRender(
 					map[string]interface{}{
 						"Src": buildpathArchiveShippedDst,
 						"Dst": buildpathArchiveExpandDst,
 					},
 					`Expand-Archive -Force -Path "{{ .Src }}" -DestinationPath "{{ .Dst }}" | Out-Null`,
 				)
-				_, stderr, err := psc.Execute(ctx, workerID, command)
+				_, stderr, err = psc.Execute(ctx, workerID, command)
 				if err != nil {
 					return errors.Wrap(err, "failed to execute docker buildpath archive expansion")
 				}
 				if stderr != "" {
 					return errors.Errorf("error executing docker buildpath archive expansion: %s", stderr)
 				}
+				info["buildpath"] = buildpathArchiveExpandDst
+
+				// transfer build dockerfile
+				var dockerfile, _ = os.Open(dockerfilePath)
+				var dockerfileShippedDst = filepath.Join(workerWorkDir, "dockerfile", fmt.Sprintf("Dockerfile.%s", id))
+				_, err = workerDialer.Copy(ctx, dockerfile, dockerfileShippedDst)
+				if err != nil {
+					return errors.Wrapf(err, "failed to ship the dockerfile to worker %s", workerAddress)
+				}
+				info["dockerfile"] = dockerfileShippedDst
 
 				return nil
 			})
 			if err != nil {
-				return errors.Wrapf(err, "error executing expand-buildpath-archive command on worker %s", workerAddress)
+				return diag.Errorf("failed to create build context of worker %s: %v", workerAddress, err)
 			}
+			buildWorker["build_context"].(*schema.Set).Add(info)
+		}
 
-			// transfer build dockerfile
-			var dockerfile, _ = os.Open(dockerfilePath)
-			var dockerfileShippedDst = filepath.Join(workerWorkDir, "dockerfile", fmt.Sprintf("Dockerfile.%s", id))
-			_, err = dialer.Copy(egctx, dockerfile, dockerfileShippedDst)
-			if err != nil {
-				return errors.Wrapf(err, "failed to ship the dockerfile to worker %s", workerAddress)
-			}
-
-			// docker build
-			err = dialer.PowerShell(egctx, nil, func(ctx context.Context, ps *powershell.PowerShell) error {
+		// retrieve information
+		if info := utils.ToStringInterfaceMap(buildWorker["build_information"]); len(info) == 0 {
+			var workerDialer = workerDialers[workerAddress]
+			var err = workerDialer.PowerShell(ctx, nil, func(ctx context.Context, ps *powershell.PowerShell) error {
 				var psc, err = ps.Commands()
 				if err != nil {
 					return errors.Wrap(err, "failed to setup interaction")
@@ -386,7 +445,7 @@ New-Item -Force -ItemType Directory -Path "$Path/dockerfile" | Out-Null;
 				}()
 
 				// get host release
-				var command = `Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion" | Select-Object -Property ReleaseId | ConvertTo-JSON -Compress;`
+				var command = `Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion" | Select-Object -Property CurrentMajorVersionNumber,CurrentMinorVersionNumber,CurrentBuildNumber,UBR,ReleaseId,BuildLabEx,CurrentBuild | ConvertTo-JSON -Compress;`
 				stdout, stderr, err := psc.Execute(ctx, workerID, command)
 				if err != nil {
 					return errors.Wrap(err, "failed to retrieve host version")
@@ -398,7 +457,11 @@ New-Item -Force -ItemType Directory -Path "$Path/dockerfile" | Out-Null;
 				if err := utils.UnmarshalJSON(utils.UnsafeStringToBytes(stdout), &hostVersion); err != nil {
 					return errors.Wrap(err, "failed to unmarshal host version retrieve output")
 				}
-				var workerReleaseID = utils.ToString(hostVersion["ReleaseId"])
+				info["os_major"] = utils.ToInt(hostVersion["CurrentMajorVersionNumber"])
+				info["os_minor"] = utils.ToInt(hostVersion["CurrentMinorVersionNumber"])
+				info["os_build"] = utils.ToInt(hostVersion["CurrentBuildNumber"])
+				info["os_ubr"] = utils.ToInt(hostVersion["UBR"])
+				info["os_release"] = utils.ToString(hostVersion["ReleaseId"])
 
 				// get host arch
 				command = `[Environment]::GetEnvironmentVariable("PROCESSOR_ARCHITECTURE", [EnvironmentVariableTarget]::Machine);`
@@ -409,7 +472,7 @@ New-Item -Force -ItemType Directory -Path "$Path/dockerfile" | Out-Null;
 				if stderr != "" {
 					return errors.Errorf("error retrieving host arch: %s", stderr)
 				}
-				var workerArch = func() string {
+				info["os_arch"] = func() string {
 					var hostArch = strings.ToLower(strings.TrimSpace(stdout))
 					switch hostArch {
 					case "arm":
@@ -421,91 +484,41 @@ New-Item -Force -ItemType Directory -Path "$Path/dockerfile" | Out-Null;
 					}
 				}()
 
-				// docker build
-				var workerOS = "windows"
-				var workerPlatform = fmt.Sprintf("%s/%s", workerOS, workerArch)
-				var workerTagSuffix = fmt.Sprintf("%s-%s-%s", workerOS, workerArch, workerReleaseID)
-				command = func(opts types.ImageBuildOptions) string {
-					// append build-args
-					opts.BuildArgs["RELEASEID"] = &workerReleaseID
-					opts.BuildArgs["TARGETPLATFORM"] = &workerPlatform
-					opts.BuildArgs["TARGETOS"] = &workerOS
-					opts.BuildArgs["TARGETARCH"] = &workerArch
-					// redirect dockerfile
-					opts.Dockerfile = dockerfileShippedDst
-					// redirect tag
-					for i := range opts.Tags {
-						opts.Tags[i] = fmt.Sprintf("%s-%s", opts.Tags[i], workerTagSuffix)
-					}
-					return docker.ConstructBuildCommand(opts, buildpathArchiveExpandDst)
-				}(buildOpts)
-				_, stderr, err = psc.Execute(ctx, workerID, command)
-				if err != nil {
-					return errors.Wrap(err, "failed to execute docker building")
-				}
-				if stderr != "" {
-					return errors.Errorf("error executing docker building: %s", stderr)
-				}
-
 				return nil
 			})
 			if err != nil {
-				return errors.Wrapf(err, "error executing docker-build command on worker %s", workerAddress)
+				return diag.Errorf("failed to retrieve information of worker %s: %v", workerAddress, err)
 			}
-
-			return nil
-		})
+			buildWorker["build_information"].(*schema.Set).Add(info)
+		}
 	}
-	if err := eg.Wait(); err != nil {
-		return diag.Errorf("failed to build image %s: %v", id, err)
-	}
-	log.Printf("[INFO] Built image %q\n", id)
+	log.Printf("[INFO] Shipped build context %q\n", id)
 
-	d.SetId(id)
-	return nil
-}
-
-func resourceWindbagImageRead(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
-	var p = meta.(*provider)
-	var id = d.Id()
-	var tags = utils.ToStringSlice(d.Get("tag"))
-	var buildWorkersInter = d.Get("build_worker").(*schema.Set).List()
-
-	if !utils.ToBool(d.Get("push")) {
-		log.Printf("[WARN] Skip to push the image %q", id)
-		return nil
-	}
-
-	// login
+	/*
+		login registries
+	*/
 
 	var registryLoginCommands = make(map[string]string)
-	for _, tag := range tags {
-		var img = docker.ParseImage(tag)
-		var cred, ok = p.registryAuths[img.Registry]
-		if !ok {
-			log.Printf("[WARN] Cannot retrieve the credential of registry %q\n", img.Registry)
-			continue
-		}
+	for _, r := range utils.ToInterfaceSlice(d.Get("registry")) {
+		var reg = utils.ToStringInterfaceMap(r)
+		var regAddress = utils.ToString(reg["address"])
+		var regUsername = utils.ToString(reg["username"])
+		var regPassword = utils.ToString(reg["password"])
 
-		var command = docker.ConstructRegistryLoginCommand(img.Registry, cred.Username, cred.Password)
-		registryLoginCommands[img.Registry] = command
+		var command = docker.ConstructRegistryLoginCommand(regAddress, regUsername, regPassword)
+		registryLoginCommands[regAddress] = command
 	}
-	if len(registryLoginCommands) == 0 {
-		log.Printf("[WARN] There are not any registries want to login, you may fail to push any images")
-	} else {
+	if len(registryLoginCommands) != 0 {
 		var eg, egctx = errgroup.WithContext(ctx)
-		for _, vv := range buildWorkersInter {
-			var buildWorker = vv.(map[string]interface{})
-			var workerAddress = utils.ToString(buildWorker["address"])
-			var dialer, err = p.serviceSSHDialWorker(egctx, workerAddress, buildWorker["ssh"].(*schema.Set).List()[0].(map[string]interface{}))
-			if err != nil {
-				return diag.Errorf("failed to dial worker %s via SSH: %v", workerAddress, err)
-			}
-
+		for _, w := range workers {
+			var loginWorker = utils.ToStringInterfaceMap(w)
+			var workerAddress = utils.ToString(loginWorker["address"])
 			var workerID = fmt.Sprintf("%s/%s", workerAddress, id)
 
+			// docker login
 			eg.Go(func() error {
-				var err = dialer.PowerShell(egctx, nil, func(ctx context.Context, ps *powershell.PowerShell) error {
+				var workerDialer = workerDialers[workerAddress]
+				var err = workerDialer.PowerShell(egctx, nil, func(ctx context.Context, ps *powershell.PowerShell) error {
 					var psc, err = ps.Commands()
 					if err != nil {
 						return errors.Wrap(err, "failed to setup interaction")
@@ -516,19 +529,19 @@ func resourceWindbagImageRead(ctx context.Context, d *schema.ResourceData, meta 
 						}
 					}()
 
-					for registry := range registryLoginCommands {
-						log.Printf("[DEBUG] Logining registry %q on worker %q", registry, workerAddress)
-						var command = registryLoginCommands[registry]
+					for reg := range registryLoginCommands {
+						log.Printf("[DEBUG] Logining registry %q on worker %q\n", reg, workerAddress)
+						var command = registryLoginCommands[reg]
 						var stdout, stderr, err = psc.Execute(ctx, workerID, command)
 						if err != nil {
-							return errors.Wrapf(err, "failed to login registry %s", registry)
+							return errors.Wrapf(err, "failed to login registry %s", reg)
 						}
 						if stderr != "" {
 							if !strings.HasPrefix(stdout, "Login Succeeded") {
-								return errors.Errorf("error loging registry %s: %s", registry, stderr)
+								return errors.Errorf("error loging registry %s: %s", reg, stderr)
 							}
 						}
-						log.Printf("[INFO] Logon registry %q on worker %q", registry, workerAddress)
+						log.Printf("[INFO] Logon registry %q on worker %q\n", reg, workerAddress)
 					}
 					return nil
 				})
@@ -544,22 +557,64 @@ func resourceWindbagImageRead(ctx context.Context, d *schema.ResourceData, meta 
 		}
 	}
 
-	// push
+	d.SetId(id)
+	return resourceWindbagImageRead(ctx, d, meta)
+}
 
-	log.Printf("[DEBUG] Pushing image %q\n", id)
-	var eg, egctx = errgroup.WithContext(ctx)
-	for _, vv := range buildWorkersInter {
-		var buildWorker = vv.(map[string]interface{})
-		var workerAddress = utils.ToString(buildWorker["address"])
-		var dialer, err = p.serviceSSHDialWorker(egctx, workerAddress, buildWorker["ssh"].(*schema.Set).List()[0].(map[string]interface{}))
+func resourceWindbagImageRead(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
+	var id = d.Id()
+
+	var workers = utils.ToInterfaceSlice(d.Get("worker"))
+	var workerDialers = make(map[string]dial.Dialer, len(workers))
+	for _, w := range workers {
+		var worker = utils.ToStringInterfaceMap(w)
+		var workerAddress = utils.ToString(worker["address"])
+		var workerSSH = utils.ToStringInterfaceMap(worker["ssh"])
+		var workerDialer, err = dialWorker(workerAddress, workerSSH)
 		if err != nil {
 			return diag.Errorf("failed to dial worker %s via SSH: %v", workerAddress, err)
 		}
+		workerDialers[workerAddress] = workerDialer
+	}
+	defer func() {
+		for _, d := range workerDialers {
+			_ = d.Close()
+		}
+	}()
 
+	/*
+		build
+	*/
+
+	log.Printf("[INFO] Building image %q\n", id)
+	var buildOpts = types.ImageBuildOptions{
+		Version:     types.BuilderV1,
+		Tags:        utils.ToStringSlice(d.Get("tag")),
+		Labels:      utils.ToStringStringMap(d.Get("label")),
+		ForceRemove: utils.ToBool(d.Get("force_rm")),
+		Isolation:   container.Isolation(utils.ToString(d.Get("isolation"))),
+		NoCache:     utils.ToBool(d.Get("no_cache")),
+		Remove:      utils.ToBool(d.Get("rm")),
+		Target:      utils.ToString(d.Get("target")),
+		BuildArgs: func() map[string]*string {
+			var args = map[string]*string{}
+			for argName, argVal := range utils.ToStringStringMap(d.Get("build_arg")) {
+				args[argName] = &argVal
+			}
+			return args
+		}(),
+	}
+	eg, egctx := errgroup.WithContext(ctx)
+	for _, w := range workers {
+		var buildWorker = utils.ToStringInterfaceMap(w)
+		var workerAddress = utils.ToString(buildWorker["address"])
 		var workerID = fmt.Sprintf("%s/%s", workerAddress, id)
 
+		// docker build
 		eg.Go(func() error {
-			var err = dialer.PowerShell(egctx, nil, func(ctx context.Context, ps *powershell.PowerShell) error {
+			log.Printf("[INFO] Building image %s on worker %s\n", id, workerAddress)
+			var workerDialer = workerDialers[workerAddress]
+			var err = workerDialer.PowerShell(egctx, nil, func(ctx context.Context, ps *powershell.PowerShell) error {
 				var psc, err = ps.Commands()
 				if err != nil {
 					return errors.Wrap(err, "failed to setup interaction")
@@ -570,63 +625,113 @@ func resourceWindbagImageRead(ctx context.Context, d *schema.ResourceData, meta 
 					}
 				}()
 
-				// get host version information
-				var command = `Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion" | Select-Object -Property ReleaseId | ConvertTo-JSON -Compress;`
-				stdout, stderr, err := psc.Execute(ctx, workerID, command)
-				if err != nil {
-					return errors.Wrap(err, "failed to retrieve host version")
-				}
-				if stderr != "" {
-					return errors.Errorf("error retrieving host version: %s", stderr)
-				}
-				var hostVersion map[string]interface{}
-				if err := utils.UnmarshalJSON(utils.UnsafeStringToBytes(stdout), &hostVersion); err != nil {
-					return errors.Wrap(err, "failed to unmarshal host version retrieve output")
-				}
-				var workerReleaseID = utils.ToString(hostVersion["ReleaseId"])
+				var workerOS = "windows"
+				var workerBuildInformation = utils.ToStringInterfaceMap(buildWorker["build_information"])
+				var workerRelease = utils.ToString(workerBuildInformation["os_release"])
+				var workerArch = utils.ToString(workerBuildInformation["os_arch"])
+				var workerPlatform = fmt.Sprintf("%s/%s", workerOS, workerArch)
+				var workerTagSuffix = fmt.Sprintf("%s-%s-%s", workerOS, workerArch, workerRelease)
+				var workerBuildContext = utils.ToStringInterfaceMap(buildWorker["build_context"])
 
-				// get host arch information
-				command = `[Environment]::GetEnvironmentVariable("PROCESSOR_ARCHITECTURE", [EnvironmentVariableTarget]::Machine);`
-				stdout, stderr, err = psc.Execute(ctx, workerID, command)
+				var command = func(opts types.ImageBuildOptions) string {
+					// append build-args
+					var buildArgs = make(map[string]*string, len(opts.BuildArgs))
+					for k, v := range buildArgs {
+						buildArgs[k] = v
+					}
+					buildArgs["RELEASEID"] = &workerRelease
+					buildArgs["TARGETPLATFORM"] = &workerPlatform
+					buildArgs["TARGETOS"] = &workerOS
+					buildArgs["TARGETARCH"] = &workerArch
+					opts.BuildArgs = buildArgs
+					// redirect dockerfile
+					opts.Dockerfile = utils.ToString(workerBuildContext["dockerfile"])
+					// redirect tag
+					var tags = make([]string, 0, len(opts.Tags))
+					for _, t := range opts.Tags {
+						tags = append(tags, fmt.Sprintf("%s-%s", t, workerTagSuffix))
+					}
+					opts.Tags = tags
+					// render
+					return docker.ConstructBuildCommand(opts, utils.ToString(workerBuildContext["buildpath"]))
+				}(buildOpts)
+				_, stderr, err := psc.Execute(ctx, workerID, command)
 				if err != nil {
-					return errors.Wrap(err, "failed to retrieve host arch")
+					return errors.Wrap(err, "failed to execute docker building")
 				}
 				if stderr != "" {
-					return errors.Errorf("error retrieving host arch: %s", stderr)
+					return errors.Errorf("error executing docker building: %s", stderr)
 				}
-				var workerArch = func() string {
-					var hostArch = strings.ToLower(strings.TrimSpace(stdout))
-					switch hostArch {
-					case "arm":
-						return "arm"
-					case "x86", "386":
-						return "386"
-					default:
-						return "amd64"
+
+				return nil
+			})
+			if err != nil {
+				return errors.Wrapf(err, "error executing docker-build command on worker %s", workerAddress)
+			}
+			log.Printf("[INFO] Built image %s on worker %s\n", id, workerAddress)
+			return nil
+		})
+	}
+	if err := eg.Wait(); err != nil {
+		return diag.Errorf("failed to build image %s: %v", id, err)
+	}
+	log.Printf("[INFO] Built image %q\n", id)
+
+	/*
+		push
+	*/
+
+	if !utils.ToBool(d.Get("push")) {
+		log.Printf("[WARN] Skipped to push the image %q", id)
+		return nil
+	}
+
+	log.Printf("[INFO] Pushing image %q\n", id)
+	eg, egctx = errgroup.WithContext(ctx)
+	for _, w := range workers {
+		var pushWorker = utils.ToStringInterfaceMap(w)
+		var workerAddress = utils.ToString(pushWorker["address"])
+		var workerID = fmt.Sprintf("%s/%s", workerAddress, id)
+
+		// docker push
+		eg.Go(func() error {
+			log.Printf("[INFO] Pushing image %s on worker %s\n", id, workerAddress)
+			var workerDialer = workerDialers[workerAddress]
+			var err = workerDialer.PowerShell(egctx, nil, func(ctx context.Context, ps *powershell.PowerShell) error {
+				var psc, err = ps.Commands()
+				if err != nil {
+					return errors.Wrap(err, "failed to setup interaction")
+				}
+				defer func() {
+					if err := psc.Close(); err != nil {
+						log.Printf("[ERROR] Failed to close interaction: %v\n", err)
 					}
 				}()
 
-				// docker push
-				var workerOS = "windows"
-				var workerTagSuffix = fmt.Sprintf("%s-%s-%s", workerOS, workerArch, workerReleaseID)
-				for _, tag := range tags {
+				var workerBuildInformation = utils.ToStringInterfaceMap(pushWorker["build_information"])
+				var workerRelease = utils.ToString(workerBuildInformation["os_release"])
+				var workerArch = utils.ToString(workerBuildInformation["os_arch"])
+				var workerTagSuffix = fmt.Sprintf("windows-%s-%s", workerArch, workerRelease)
+
+				for _, tag := range buildOpts.Tags {
 					tag = fmt.Sprintf("%s-%s", tag, workerTagSuffix)
-					log.Printf("[DEBUG] Pushing tag %q on worker %q", tag, workerAddress)
-					command = docker.ConstructImagePushCommand(tag)
-					_, stderr, err = psc.Execute(ctx, workerID, command)
+					log.Printf("[DEBUG] Pushing tag %q on worker %q\n", tag, workerAddress)
+					var command = docker.ConstructImagePushCommand(tag)
+					_, stderr, err := psc.Execute(ctx, workerID, command)
 					if err != nil {
 						return errors.Wrapf(err, "failed to push tag %s", tag)
 					}
 					if stderr != "" {
 						return errors.Errorf("error pushing tag %s: %s", tag, stderr)
 					}
-					log.Printf("[DEBUG] Pushed tag %q on worker %q", tag, workerAddress)
+					log.Printf("[DEBUG] Pushed tag %q on worker %q\n", tag, workerAddress)
 				}
 				return nil
 			})
 			if err != nil {
 				return errors.Wrapf(err, "error executing docker-push command on worker %s", workerAddress)
 			}
+			log.Printf("[INFO] Pushed image %s on worker %s\n", id, workerAddress)
 			return nil
 		})
 	}
@@ -634,6 +739,89 @@ func resourceWindbagImageRead(ctx context.Context, d *schema.ResourceData, meta 
 		return diag.Errorf("failed to push image %s: %v", id, err)
 	}
 	log.Printf("[INFO] Pushed image %q\n", id)
+
+	/*
+		manifest
+	*/
+
+	log.Printf("[INFO] Manifesting image %s\n", id)
+	var manifestWorker, tagSuffixes = func() (manifestWorker map[string]interface{}, tagSuffixes []string) {
+		var manifestWorkerBuild int
+		for _, w := range workers {
+			var checkpoint = utils.ToStringInterfaceMap(w)
+			var checkpointBuildInformation = utils.ToStringInterfaceMap(checkpoint["build_information"])
+			var checkpointOSBuild = utils.ToInt(checkpointBuildInformation["os_build"])
+			var checkpointOSArch = utils.ToString(checkpointBuildInformation["os_arch"])
+			var checkpointOSRelease = utils.ToString(checkpointBuildInformation["os_release"])
+
+			tagSuffixes = append(tagSuffixes, fmt.Sprintf("windows-%s-%s", checkpointOSArch, checkpointOSRelease))
+			if manifestWorker == nil {
+				manifestWorker = checkpoint
+				manifestWorkerBuild = checkpointOSBuild
+			} else if manifestWorkerBuild < checkpointOSBuild {
+				manifestWorker = checkpoint
+				manifestWorkerBuild = checkpointOSBuild
+			}
+		}
+		return manifestWorker, tagSuffixes
+	}()
+	var workerAddress = utils.ToString(manifestWorker["address"])
+	var workerID = fmt.Sprintf("%s/%s", workerAddress, id)
+	eg, egctx = errgroup.WithContext(ctx)
+	for _, tag := range buildOpts.Tags {
+		var manifests []string
+		for _, tagSuffix := range tagSuffixes {
+			manifests = append(manifests, fmt.Sprintf("%s-%s", tag, tagSuffix))
+		}
+
+		// docker manifest
+		eg.Go(func() error {
+			log.Printf("[INFO] Manifesting image %s on worker %s\n", id, workerAddress)
+			var workerDialer = workerDialers[workerAddress]
+			var err = workerDialer.PowerShell(egctx, nil, func(ctx context.Context, ps *powershell.PowerShell) error {
+				var psc, err = ps.Commands()
+				if err != nil {
+					return errors.Wrap(err, "failed to setup interaction")
+				}
+				defer func() {
+					if err := psc.Close(); err != nil {
+						log.Printf("[ERROR] Failed to close interaction: %v\n", err)
+					}
+				}()
+
+				// manifest create
+				var command = docker.ConstructManifestCreateCommand(tag, manifests...)
+				_, stderr, err := psc.Execute(ctx, workerID, command)
+				if err != nil {
+					return errors.Wrap(err, "failed to execute docker manifest creation")
+				}
+				if stderr != "" {
+					return errors.Errorf("error executing docker manifest creation: %s", stderr)
+				}
+
+				// manifest push
+				command = docker.ConstructManifestPushCommand(tag)
+				_, stderr, err = psc.Execute(ctx, workerID, command)
+				if err != nil {
+					return errors.Wrap(err, "failed to execute docker manifest pushing")
+				}
+				if stderr != "" {
+					return errors.Errorf("error executing docker manifest pushing: %s", stderr)
+				}
+
+				return nil
+			})
+			if err != nil {
+				return errors.Wrapf(err, "error executing docker-manifest command on worker %s", workerAddress)
+			}
+			log.Printf("[INFO] Manifested image %s on worker %s\n", id, workerAddress)
+			return nil
+		})
+	}
+	if err := eg.Wait(); err != nil {
+		return diag.Errorf("failed to manifest image %s: %v", id, err)
+	}
+	log.Printf("[INFO] Manifested image %s\n", id)
 
 	return nil
 }
@@ -670,25 +858,9 @@ func validationIsIPWithPort(i interface{}, k string) (warnings []string, errors 
 	return warnings, errors
 }
 
-func (p *provider) serviceGetImageDigest(ctx context.Context, image string) (string, error) {
-	var opts []docker.GetImageDigestOption
-
-	var si = docker.ParseImage(image)
-	if ac, ok := p.registryAuths[si.Registry]; ok {
-		opts = append(opts, docker.WithBasicAuth(ac.Username, ac.Password))
-	}
-
-	var digest, err = docker.GetImageDigest(ctx, image, append(opts, docker.WithManifestSupport())...)
-	if err != nil {
-		log.Printf("[WARN] Fallback to get image %s digest with manifest v1 specification: %v\n", image, err)
-		return docker.GetImageDigest(ctx, image, append(opts, docker.WithManifestV1SupportOnly())...)
-	}
-	return digest, nil
-}
-
-func (p *provider) serviceSSHDialWorker(ctx context.Context, address string, ssh map[string]interface{}) (worker.Dialer, error) {
-	var opts worker.DialSSHOptions
-	opts.Address = utils.ToString(address)
+func dialWorker(address string, ssh map[string]interface{}) (dial.Dialer, error) {
+	var opts dial.SSHOptions
+	opts.Address = address
 	opts.Username = utils.ToString(ssh["username"])
 	opts.Password = utils.ToString(ssh["password"])
 	if v := utils.ToString(ssh["key"]); v != "" {
@@ -700,7 +872,7 @@ func (p *provider) serviceSSHDialWorker(ctx context.Context, address string, ssh
 	opts.WithAgent = utils.ToBool(ssh["with_agent"])
 
 	log.Printf("[DEBUG] Dialing worker %q via SSH\n", address)
-	var w, err = worker.DailSSH(opts)
+	var w, err = dial.SSH(opts)
 	if err != nil {
 		return nil, err
 	}

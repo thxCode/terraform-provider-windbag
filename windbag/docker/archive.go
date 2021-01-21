@@ -62,10 +62,10 @@ func ZipWithOptions(srcPath string, options *ZipOptions) (io.ReadCloser, error) 
 		defer func() {
 			// Make sure to check the error on Close.
 			if err := za.ZipWriter.Close(); err != nil {
-				log.Printf("[ERROR] Cannot close zip writer: %s", err)
+				log.Printf("[ERROR] Cannot close zip writer: %v\n", err)
 			}
 			if err := pipeWriter.Close(); err != nil {
-				log.Printf("[ERROR] Cannot close pipe writer: %s", err)
+				log.Printf("[ERROR] Cannot close pipe writer: %v\n", err)
 			}
 		}()
 
@@ -88,7 +88,7 @@ func ZipWithOptions(srcPath string, options *ZipOptions) (io.ReadCloser, error) 
 			// directory. So, we must split the source path and use the
 			// basename as the include.
 			if len(options.IncludeFiles) > 0 {
-				log.Printf("[WARN] Zip: cannot archive a file with includes")
+				log.Printf("[WARN] Zip: cannot archive a file with includes\n")
 			}
 
 			var dir, base = splitPathDirEntry(srcPath)
@@ -106,7 +106,7 @@ func ZipWithOptions(srcPath string, options *ZipOptions) (io.ReadCloser, error) 
 			var walkRoot = getWalkRoot(srcPath, include)
 			_ = filepath.Walk(walkRoot, func(filePath string, f os.FileInfo, err error) error {
 				if err != nil {
-					log.Printf("[ERROR] Zip: Cannot stat file %s to zip: %s", srcPath, err)
+					log.Printf("[ERROR] Zip: Cannot stat file %s to zip: %v\n", srcPath, err)
 					return nil
 				}
 
@@ -131,7 +131,7 @@ func ZipWithOptions(srcPath string, options *ZipOptions) (io.ReadCloser, error) 
 				if include != relFilePath {
 					skip, err = pm.Matches(relFilePath)
 					if err != nil {
-						log.Printf("[ERROR] Error matching %s: %v", relFilePath, err)
+						log.Printf("[ERROR] Error matching %s: %v\n", relFilePath, err)
 						return err
 					}
 				}
@@ -174,7 +174,7 @@ func ZipWithOptions(srcPath string, options *ZipOptions) (io.ReadCloser, error) 
 				seen[relFilePath] = struct{}{}
 
 				if err := za.addZipFile(filePath, relFilePath); err != nil {
-					log.Printf("[ERROR] Cannot add file %s to zip: %s", filePath, err)
+					log.Printf("[ERROR] Cannot add file %s to zip: %v\n", filePath, err)
 					// if pipe is broken, stop writing zip stream to it
 					if err == io.ErrClosedPipe {
 						return err

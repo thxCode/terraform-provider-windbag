@@ -69,9 +69,23 @@ resource "windbag_image" "example" {
   # default is "true".
   push = true
 
+  # Specify the authentication registry of registry.
+  registry {
+
+    # specify the address of registry.
+    address = ""
+
+    # specify the username of registry credential.
+    username = ""
+
+    # specify the password of registry credential.
+    password = ""
+
+  }
+
   # specify the workers to build image,
   # and manifest the image in the latest release worker.
-  build_worker {
+  worker {
 
     # specify the address of worker.
     address = ""
@@ -110,8 +124,8 @@ resource "windbag_image" "example" {
 
 ### Required
 
-- **build_worker** (Block Set, Min: 1) Specify the workers to build. (see [below for nested schema](#nestedblock--build_worker))
 - **tag** (List of String) Specify the name of the built artifact, and use the repository of the last item as this resource ID.
+- **worker** (Block Set, Min: 1) Specify the workers to build. (see [below for nested schema](#nestedblock--worker))
 
 ### Optional
 
@@ -124,23 +138,30 @@ resource "windbag_image" "example" {
 - **no_cache** (Boolean) Specify the isolation technology of container. Defaults to `false`.
 - **path** (String) Specify the path to build.
 - **push** (Boolean) Specify to push the build artifact. Defaults to `true`.
+- **registry** (Block Set) Specify the authentication registry of registry. (see [below for nested schema](#nestedblock--registry))
 - **rm** (Boolean) Specify to remove intermediate containers after a successful build. Defaults to `true`.
 - **target** (String) Specify the target of build stage to build.
+- **timeouts** (Block, Optional) (see [below for nested schema](#nestedblock--timeouts))
 
-<a id="nestedblock--build_worker"></a>
-### Nested Schema for `build_worker`
+<a id="nestedblock--worker"></a>
+### Nested Schema for `worker`
 
 Required:
 
 - **address** (String) Specify the address of worker.
-- **ssh** (Block Set, Min: 1, Max: 1) Specify to use SSH to login the worker. (see [below for nested schema](#nestedblock--build_worker--ssh))
+- **ssh** (Block Set, Min: 1, Max: 1) Specify to use SSH to login the worker. (see [below for nested schema](#nestedblock--worker--ssh))
 
 Optional:
 
 - **work_dir** (String) Specify the working directory of worker. Defaults to `C:/etc/windbag`.
 
-<a id="nestedblock--build_worker--ssh"></a>
-### Nested Schema for `build_worker.ssh`
+Read-only:
+
+- **build_context** (Set of Object) Observed the build context of worker. (see [below for nested schema](#nestedatt--worker--build_context))
+- **build_information** (Set of Object) Observed the build information of worker. (see [below for nested schema](#nestedatt--worker--build_information))
+
+<a id="nestedblock--worker--ssh"></a>
+### Nested Schema for `worker.ssh`
 
 Optional:
 
@@ -149,5 +170,50 @@ Optional:
 - **password** (String, Sensitive) Specify the password for authenticating the worker.
 - **username** (String) Specify the username for authenticating the worker. Defaults to `root`.
 - **with_agent** (Boolean) Specify to use ssh-agent to manage the login credential. Defaults to `false`.
+
+
+<a id="nestedatt--worker--build_context"></a>
+### Nested Schema for `worker.build_context`
+
+Read-only:
+
+- **buildpath** (String)
+- **dockerfile** (String)
+
+
+<a id="nestedatt--worker--build_information"></a>
+### Nested Schema for `worker.build_information`
+
+Read-only:
+
+- **os_arch** (String)
+- **os_build** (Number)
+- **os_major** (Number)
+- **os_minor** (Number)
+- **os_release** (String)
+- **os_ubr** (Number)
+
+
+
+<a id="nestedblock--registry"></a>
+### Nested Schema for `registry`
+
+Required:
+
+- **password** (String, Sensitive) Specify the password of the registry credential.
+- **username** (String) Specify the username of the registry credential.
+
+Optional:
+
+- **address** (String) Specify the address of the registry. Defaults to `docker.io`.
+
+
+<a id="nestedblock--timeouts"></a>
+### Nested Schema for `timeouts`
+
+Optional:
+
+- **create** (String)
+- **read** (String)
 
 

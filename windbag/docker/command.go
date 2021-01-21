@@ -59,23 +59,23 @@ func ConstructImagePushCommand(tag string) string {
 }
 
 // ConstructManifestCreateCommand constructs the creating manifest command.
-func ConstructManifestCreateCommand(manifest string, tags ...string) string {
+func ConstructManifestCreateCommand(tag string, manifests ...string) string {
 	var sb strings.Builder
-	sb.WriteString("docker manifest create --insecure --amend ")
-	sb.WriteString(manifest)
+	sb.WriteString("$env:DOCKER_CLI_EXPERIMENTAL=\"enabled\"; docker manifest create --insecure --amend ")
+	sb.WriteString(tag)
 	sb.WriteString(" ")
-	for idx := range tags {
-		sb.WriteString(tags[idx])
+	for idx := range manifests {
+		sb.WriteString(manifests[idx])
 		sb.WriteString(" ")
 	}
 	return sb.String()
 }
 
 // ConstructManifestPushCommand constructs the pushing manifest command.
-func ConstructManifestPushCommand(manifest string) string {
+func ConstructManifestPushCommand(tag string) string {
 	var sb strings.Builder
-	sb.WriteString("docker manifest push --purge ")
-	sb.WriteString(manifest)
+	sb.WriteString("$env:DOCKER_CLI_EXPERIMENTAL=\"enabled\"; docker manifest push --purge ")
+	sb.WriteString(tag)
 	return sb.String()
 }
 

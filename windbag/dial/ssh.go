@@ -1,4 +1,4 @@
-package worker
+package dial
 
 import (
 	"context"
@@ -15,13 +15,15 @@ import (
 	"golang.org/x/crypto/ssh/agent"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/thxcode/terraform-provider-windbag/windbag/dial/powershell"
 	"github.com/thxcode/terraform-provider-windbag/windbag/pki"
 	"github.com/thxcode/terraform-provider-windbag/windbag/utils"
-	"github.com/thxcode/terraform-provider-windbag/windbag/worker/powershell"
 )
 
-// DialSSHOptions specifies the options to dial SSH server.
-type DialSSHOptions struct {
+const sshKeepaliveSliding = 5 * time.Second
+
+// SSHOptions specifies the options to dial SSH server.
+type SSHOptions struct {
 	Address           string
 	Username          string
 	Password          string
@@ -32,7 +34,7 @@ type DialSSHOptions struct {
 
 // DialSSH creates a dialer over SSH,
 // which is inspired by rancher/rke tunnel.
-func DailSSH(opts DialSSHOptions) (Dialer, error) {
+func SSH(opts SSHOptions) (Dialer, error) {
 	if opts.Address == "" {
 		return nil, errors.New("cannot dial to SSH server as the address is blank")
 	}
@@ -117,18 +119,35 @@ func (d sshDialer) PowerShell(ctx context.Context, options *powershell.CreateOpt
 	eg, ctx := errgroup.WithContext(ctx)
 	eg.Go(func() error {
 		// keepalive
-		defer utils.HandleCrash()
-		var tick = time.NewTicker(2 * time.Second)
-		defer tick.Stop()
+		defer utils.HandleCrashSilent()
+		var t *time.Ticker
+		defer func() {
+			if t != nil {
+				t.Stop()
+			}
+		}()
 		for {
 			select {
-			case <-tick.C:
-				if _, err := s.SendRequest("keepalive", false, nil); err != nil {
-					return err
-				}
-				log.Printf("[DEBUG] Ping SSH session of %s\n", d.addr)
 			case <-ctx.Done():
 				return nil
+			default:
+			}
+
+			if _, err := s.SendRequest("keepalive", true, nil); err != nil {
+				return err
+			}
+			log.Printf("[TRACE] Ping SSH session of %s\n", d.addr)
+
+			if t == nil {
+				t = time.NewTicker(sshKeepaliveSliding)
+			} else {
+				t.Reset(sshKeepaliveSliding)
+			}
+
+			select {
+			case <-ctx.Done():
+				return nil
+			case <-t.C:
 			}
 		}
 	})

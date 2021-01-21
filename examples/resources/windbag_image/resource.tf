@@ -54,9 +54,23 @@ resource "windbag_image" "example" {
   # default is "true".
   push = true
 
+  # Specify the authentication registry of registry.
+  registry {
+
+    # specify the address of registry.
+    address = ""
+
+    # specify the username of registry credential.
+    username = ""
+
+    # specify the password of registry credential.
+    password = ""
+
+  }
+
   # specify the workers to build image,
   # and manifest the image in the latest release worker.
-  build_worker {
+  worker {
 
     # specify the address of worker.
     address = ""

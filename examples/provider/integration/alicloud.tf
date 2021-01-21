@@ -15,7 +15,7 @@ terraform {
 
 variable "resource_group" {
   type    = string
-  default = "windbag"
+  default = "default"
 }
 
 variable "region" {
@@ -36,7 +36,7 @@ variable "host_image_list" {
   default = [
     "win2019_1809_x64_dtc_en-us_40G_container_alibase_20201120.vhd",
     "wincore_1909_x64_dtc_en-us_40G_container_alibase_20200723.vhd",
-    "wincore_2004_x64_dtc_en-us_40G_container_alibase_20201120.vhd"
+    "wincore_2004_x64_dtc_en-us_40G_container_alibase_20201217.vhd"
   ]
 }
 
@@ -61,9 +61,8 @@ EOF
 }
 
 ## resource group
-resource "alicloud_resource_manager_resource_group" "default" {
-  name         = var.resource_group
-  display_name = var.resource_group
+data "alicloud_resource_manager_resource_groups" "default" {
+  name_regex = format("^%s$", var.resource_group)
 }
 
 ## zone
@@ -76,7 +75,7 @@ data "alicloud_zones" "default" {
 
 ## vpc
 resource "alicloud_vpc" "default" {
-  resource_group_id = alicloud_resource_manager_resource_group.default.id
+  resource_group_id = data.alicloud_resource_manager_resource_groups.default.groups.0.id
   name              = "vpc-windbag"
   cidr_block        = "172.16.0.0/12"
 }
@@ -89,7 +88,7 @@ resource "alicloud_vswitch" "default" {
 
 ## security group !!!
 resource "alicloud_security_group" "default" {
-  resource_group_id   = alicloud_resource_manager_resource_group.default.id
+  resource_group_id   = data.alicloud_resource_manager_resource_groups.default.groups.0.id
   vpc_id              = alicloud_vpc.default.id
   description         = "sg-windbag"
   name                = "sg-windbag"
@@ -123,7 +122,7 @@ resource "alicloud_instance" "default" {
   description          = var.host_image_list[count.index]
   instance_name        = "ecs-windbag-${count.index}"
   image_id             = var.host_image_list[count.index]
-  resource_group_id    = alicloud_resource_manager_resource_group.default.id
+  resource_group_id    = data.alicloud_resource_manager_resource_groups.default.groups.0.id
   availability_zone    = data.alicloud_zones.default.zones[0].id
   vswitch_id           = alicloud_vswitch.default.id
   security_groups      = alicloud_security_group.default.*.id
@@ -136,7 +135,7 @@ resource "alicloud_eip" "default" {
   count                = length(var.host_image_list)
   description          = var.host_image_list[count.index]
   name                 = "eip-windbag-${count.index}"
-  resource_group_id    = alicloud_resource_manager_resource_group.default.id
+  resource_group_id    = data.alicloud_resource_manager_resource_groups.default.groups.0.id
   bandwidth            = 100
   internet_charge_type = "PayByTraffic"
   instance_charge_type = "PostPaid"
@@ -146,7 +145,7 @@ resource "alicloud_eip_association" "default" {
   instance_id   = alicloud_instance.default[count.index].id
   allocation_id = alicloud_eip.default[count.index].id
 }
-output "alicloud_eip_public_ip" {
+output "alicloud_eip_public_ips" {
   value = alicloud_eip.default.*.ip_address
 }
 
@@ -180,29 +179,40 @@ variable "image_registry_password" {
 
 provider "windbag" {}
 
-## registry
-data "windbag_registry" "default" {
-  address  = var.image_registry_list
-  username = var.image_registry_username
-  password = var.image_registry_password
-}
-
 ## image
 resource "windbag_image" "default" {
   path = pathexpand("bar")
   tag = [
     for registry in var.image_registry_list :
-    join(":", [join("/", [registry, var.image_repository, var.image_name]), var.image_tag])
+    join(":", [
+      join("/", [
+        registry,
+        var.image_repository,
+      var.image_name]),
+    var.image_tag])
   ]
   push = true
-  dynamic "build_worker" {
-    for_each = alicloud_instance.default
+
+  dynamic "registry" {
+    for_each = var.image_registry_list
     content {
-      address = format("%s:22", build_worker.value["ip_address"])
-      ssh = {
-        username = root
-        password = build_worker.value["password"]
+      address  = registry.value
+      username = var.image_registry_username
+      password = var.image_registry_password
+    }
+  }
+
+  dynamic "build_worker" {
+    for_each = alicloud_eip.default.*.ip_address
+    content {
+      address = format("%s:22", build_worker.value)
+      ssh {
+        username = "root"
+        password = var.host_password
       }
     }
   }
+}
+output "windbag_image_artifacts" {
+  value = windbag_image.default.tag
 }

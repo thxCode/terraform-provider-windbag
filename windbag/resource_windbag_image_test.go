@@ -2,6 +2,7 @@ package windbag
 
 import (
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
@@ -23,44 +24,50 @@ func testAccResourceWindbagImageDefault() resource.TestStep {
 	var (
 		dockerUsername = os.Getenv("DOCKER_USERNAME")
 		dockerPassword = os.Getenv("DOCKER_PASSWORD")
-		address        = os.Getenv("WORKER_ADDRESS")
+		addresses      = strings.Split(os.Getenv("WORKER_ADDRESS"), ",")
 		password       = os.Getenv("WORKER_PASSWORD")
 	)
 
 	var configTmpl = `
-data "windbag_registry" "dockerhub" {
-  address = [ "docker.io" ]
-  username = "{{ .DockerUsername }}"
-  password = "{{ .DockerPassword }}"
-}
 resource "windbag_image" "pause_windows" {
   path = pathexpand("testdata/pause_windows")
   tag = [
     "thxcode/pause-windows:v1.0.0"
   ]
-  build_worker {
-    address = "{{ .Address }}"
+
+  registry {
+    username = "{{ .DockerUsername }}"
+	password = "{{ .DockerPassword }}"
+  }
+
+{{ $root := . }}
+{{- range .Addresses }}
+
+  worker {
+    address = "{{ . }}"
     ssh {
-      password = "{{ .Password }}"
+      password = "{{ $root.Password }}"
     }
   }
+
+{{- end }}
 }
 `
 	var configData = map[string]interface{}{
 		"DockerUsername": dockerUsername,
 		"DockerPassword": dockerPassword,
-		"Address":        address,
+		"Addresses":      addresses,
 		"Password":       password,
 	}
 
 	return resource.TestStep{
 		SkipFunc: func() (bool, error) {
-			return hasBlank(dockerUsername, dockerPassword, address, password), nil
+			return hasBlank(append(addresses, dockerUsername, dockerPassword, password)...), nil
 		},
 		Config: template.TryRender(configData, configTmpl),
 		Check: resource.ComposeTestCheckFunc(
 			resource.TestCheckResourceAttr(
-				"windbag_image.flannel_windows", "id", "flannel-windows",
+				"windbag_image.pause_windows", "id", "pause-windows",
 			),
 		),
 	}
