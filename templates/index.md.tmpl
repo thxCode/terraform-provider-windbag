@@ -17,31 +17,31 @@ To package a Windows manifest Docker image(crossing multi-release) is a boring t
 
 I created a script to setup the SSH service on Windows, please have a shot if you like it:
 
-``` powershell
+```powershell
 
-# https://www.powershellgallery.com/packages/OpenSSHUtils/0.0.2.0/Content/OpenSSHUtils.psm1
+> # https://www.powershellgallery.com/packages/OpenSSHUtils/0.0.2.0/Content/OpenSSHUtils.psm1
 
-# enable service
-iwr -uri https://gist.githubusercontent.com/thxCode/cd8ec26795a56eb120b57675f0c067cf/raw/897f2c41df99832d6f88f663a9c2ac442dee4875/zz_sshd_manage.ps1 -UseBasicParsing | iex
+> # enable service
+> iwr -uri https://gist.githubusercontent.com/thxCode/cd8ec26795a56eb120b57675f0c067cf/raw/897f2c41df99832d6f88f663a9c2ac442dee4875/zz_sshd_manage.ps1 -UseBasicParsing | iex
 
-# disable service
-$SSHD_ENABLED="disabled"; iwr -uri https://gist.githubusercontent.com/thxCode/cd8ec26795a56eb120b57675f0c067cf/raw/897f2c41df99832d6f88f663a9c2ac442dee4875/zz_sshd_manage.ps1 -UseBasicParsing | iex
+> # disable service
+> $SSHD_ENABLED="disabled"; iwr -uri https://gist.githubusercontent.com/thxCode/cd8ec26795a56eb120b57675f0c067cf/raw/897f2c41df99832d6f88f663a9c2ac442dee4875/zz_sshd_manage.ps1 -UseBasicParsing | iex
 
-# configure a user with password
-$env:SSH_USER="<user name>";
-$env:SSH_USER_PASSWORD="<user password>";
-iwr -uri https://gist.githubusercontent.com/thxCode/cd8ec26795a56eb120b57675f0c067cf/raw/897f2c41df99832d6f88f663a9c2ac442dee4875/zz_sshd_manage.ps1 -UseBasicParsing | iex
+> # configure a remote administrator with password
+> $env:SSH_USER="<user name>";
+> $env:SSH_USER_PASSWORD="<user password>";
+> iwr -uri https://gist.githubusercontent.com/thxCode/cd8ec26795a56eb120b57675f0c067cf/raw/897f2c41df99832d6f88f663a9c2ac442dee4875/zz_sshd_manage.ps1 -UseBasicParsing | iex
 
-# configure a remote administrator with public key
-$SSH_USER="<user name>";
-$SSH_USER_PUBLICKEY="<user public key>";
-iwr -uri https://gist.githubusercontent.com/thxCode/cd8ec26795a56eb120b57675f0c067cf/raw/897f2c41df99832d6f88f663a9c2ac442dee4875/zz_sshd_manage.ps1 -UseBasicParsing | iex
+> # configure a remote administrator with public key
+> $env:SSH_USER="<user name>";
+> $env:SSH_USER_PUBLICKEY="<user public key>";
+> iwr -uri https://gist.githubusercontent.com/thxCode/cd8ec26795a56eb120b57675f0c067cf/raw/897f2c41df99832d6f88f663a9c2ac442dee4875/zz_sshd_manage.ps1 -UseBasicParsing | iex
 
-# configure a remote user with public key
-$SSH_USER="<user name>";
-$SSH_USER_GROUP="sshusers";
-$SSH_USER_PUBLICKEY="<user public key>";
-iwr -uri https://gist.githubusercontent.com/thxCode/cd8ec26795a56eb120b57675f0c067cf/raw/897f2c41df99832d6f88f663a9c2ac442dee4875/zz_sshd_manage.ps1 -UseBasicParsing | iex
+> # configure a remote user with public key
+> $env:SSH_USER_GROUP="sshusers";
+> $env:SSH_USER="<user name>";
+> $env:SSH_USER_PUBLICKEY="<user public key>";
+> iwr -uri https://gist.githubusercontent.com/thxCode/cd8ec26795a56eb120b57675f0c067cf/raw/897f2c41df99832d6f88f663a9c2ac442dee4875/zz_sshd_manage.ps1 -UseBasicParsing | iex
 
 ```
 
@@ -51,10 +51,26 @@ iwr -uri https://gist.githubusercontent.com/thxCode/cd8ec26795a56eb120b57675f0c0
 
 > *NOTE*
 >
-> The `windbag_worker` only support to use `ssh` protocol to connect to the Windows host at present.
+> The `windbag_image` only support to use `ssh` protocol to connect to the Windows worker at present.
 
-## Advance Usage with Dynamic Provisioner
+## Example With [Alibaba Cloud](https://registry.terraform.io/providers/aliyun/alicloud/latest/docs) Provider
 
-{{tffile "windbag/testdata/provider.tf"}}
+```bash
+
+$ tf plan \
+   --var 'access_key=...' \
+   --var 'secret_key=...' \
+   --var 'host_image_list=["win2019_1809_x64_dtc_en-us_40G_container_alibase_20201120.vhd","wincore_1909_x64_dtc_en-us_40G_container_alibase_20200723.vhd","wincore_2004_x64_dtc_en-us_40G_container_alibase_20201120.vhd"]' \
+   --var 'host_password=Windbag@Test' \
+   --var 'image_registry_list=["registry.cn-hangzhou.aliyuncs.com", "registry.cn-hongkong.aliyuncs.com"]' \
+   --var 'image_repository=foo' \
+   --var 'image_name=bar' \
+   --var 'image_tag=v0.0.0' \
+   --var 'image_registry_username=...' \
+   --var 'image_registry_password=...'
+
+```
+
+{{tffile "examples/provider/integration/alicloud.tf"}}
 
 {{ .SchemaMarkdown | trimspace }}

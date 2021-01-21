@@ -58,24 +58,33 @@ resource "windbag_image" "example" {
   # and manifest the image in the latest release worker.
   build_worker {
 
-    # specify the id of windbag_worker instance.
-    id = ""
-
-    # specify the release ID of worker.
-    os_release = ""
-
-    # specify the build number of worker.
-    os_build = ""
-
-    # specify the type of worker.
-    os_type = ""
-
-    # specify the arch of worker.
-    os_arch = ""
+    # specify the address of worker.
+    address = ""
 
     # specify the working directory of worker.
     work_dir = ""
 
+    # specify to use SSH to login the worker.
+    ssh {
+
+      # specify the username for authenticating the worker,
+      # default is "root".
+      username = ""
+
+      # specify the password for authenticating the worker.
+      password = ""
+
+      # specify the content of Private Key to authenticate.
+      key = ""
+
+      # specify the content of Certificate to sign the Private Key.
+      cert = ""
+
+      # specify to use ssh-agent to manage the login certificate,
+      # default is "false".
+      with_agent = false
+
+    }
   }
 
 }

@@ -53,8 +53,7 @@ func registerDataSources(p *schema.Provider) {
 
 func registerResources(p *schema.Provider) {
 	p.ResourcesMap = map[string]*schema.Resource{
-		"windbag_image":  resourceWindbagImage(),
-		"windbag_worker": resourceWindbagWorker(),
+		"windbag_image": resourceWindbagImage(),
 	}
 }
 

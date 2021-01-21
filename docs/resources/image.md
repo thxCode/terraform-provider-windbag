@@ -73,24 +73,33 @@ resource "windbag_image" "example" {
   # and manifest the image in the latest release worker.
   build_worker {
 
-    # specify the id of windbag_worker instance.
-    id = ""
-
-    # specify the release ID of worker.
-    os_release = ""
-
-    # specify the build number of worker.
-    os_build = ""
-
-    # specify the type of worker.
-    os_type = ""
-
-    # specify the arch of worker.
-    os_arch = ""
+    # specify the address of worker.
+    address = ""
 
     # specify the working directory of worker.
     work_dir = ""
 
+    # specify to use SSH to login the worker.
+    ssh {
+
+      # specify the username for authenticating the worker,
+      # default is "root".
+      username = ""
+
+      # specify the password for authenticating the worker.
+      password = ""
+
+      # specify the content of Private Key to authenticate.
+      key = ""
+
+      # specify the content of Certificate to sign the Private Key.
+      cert = ""
+
+      # specify to use ssh-agent to manage the login certificate,
+      # default is "false".
+      with_agent = false
+
+    }
   }
 
 }
@@ -123,14 +132,22 @@ resource "windbag_image" "example" {
 
 Required:
 
-- **id** (String) Specify the id of windbag_worker instance.
-- **work_dir** (String) Specify the working directory of worker.
+- **address** (String) Specify the address of worker.
+- **ssh** (Block Set, Min: 1, Max: 1) Specify to use SSH to login the worker. (see [below for nested schema](#nestedblock--build_worker--ssh))
 
 Optional:
 
-- **os_arch** (String) Specify the arch of worker.
-- **os_build** (Number) Specify the build number of worker.
-- **os_release** (String) Specify the release ID of worker.
-- **os_type** (String) Specify the type of worker.
+- **work_dir** (String) Specify the working directory of worker. Defaults to `C:/etc/windbag`.
+
+<a id="nestedblock--build_worker--ssh"></a>
+### Nested Schema for `build_worker.ssh`
+
+Optional:
+
+- **cert** (String) Specify the content of Certificate to authenticate.
+- **key** (String, Sensitive) Specify the content of Private Key to authenticate.
+- **password** (String, Sensitive) Specify the password for authenticating the worker.
+- **username** (String) Specify the username for authenticating the worker. Defaults to `root`.
+- **with_agent** (Boolean) Specify to use ssh-agent to manage the login credential. Defaults to `false`.
 
 

@@ -29,27 +29,20 @@ func testAccResourceWindbagImageDefault() resource.TestStep {
 
 	var configTmpl = `
 data "windbag_registry" "dockerhub" {
+  address = [ "docker.io" ]
   username = "{{ .DockerUsername }}"
   password = "{{ .DockerPassword }}"
 }
-resource "windbag_worker" "windows_1809" {
-  address = "{{ .Address }}"
-  ssh {
-    password = "{{ .Password }}"
-  }
-}
-resource "windbag_image" "flannel_windows" {
-  path = pathexpand("testdata/flannel_windows")
+resource "windbag_image" "pause_windows" {
+  path = pathexpand("testdata/pause_windows")
   tag = [
-    "thxcode/flannel-windows:v1.0.0"
+    "thxcode/pause-windows:v1.0.0"
   ]
   build_worker {
-    id = windbag_worker.windows_1809.id
-    os_build = windbag_worker.windows_1809.os_build
-	os_release = windbag_worker.windows_1809.os_release
-	os_type = windbag_worker.windows_1809.os_type
-    os_arch = windbag_worker.windows_1809.os_arch
-	work_dir = windbag_worker.windows_1809.work_dir
+    address = "{{ .Address }}"
+    ssh {
+      password = "{{ .Password }}"
+    }
   }
 }
 `
@@ -66,9 +59,6 @@ resource "windbag_image" "flannel_windows" {
 		},
 		Config: template.TryRender(configData, configTmpl),
 		Check: resource.ComposeTestCheckFunc(
-			resource.TestCheckResourceAttr(
-				"windbag_worker.windows_1809", "id", resourceWindbagWorkerID(address),
-			),
 			resource.TestCheckResourceAttr(
 				"windbag_image.flannel_windows", "id", "flannel-windows",
 			),
