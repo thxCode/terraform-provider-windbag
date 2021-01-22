@@ -202,10 +202,10 @@ resource "windbag_image" "default" {
     }
   }
 
-  dynamic "build_worker" {
+  dynamic "worker" {
     for_each = alicloud_eip.default.*.ip_address
     content {
-      address = format("%s:22", build_worker.value)
+      address = format("%s:22", worker.value)
       ssh {
         username = "root"
         password = var.host_password

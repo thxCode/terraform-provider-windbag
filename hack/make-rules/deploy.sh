@@ -6,4 +6,4 @@ set -o pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
 
-CROSS=true ONLY_ARCHIVE=true "${ROOT_DIR}/hack/make-rules/windbag.sh" package only
+CROSS=true ONLY_ARCHIVE=false "${ROOT_DIR}/hack/make-rules/windbag.sh" package,deploy only

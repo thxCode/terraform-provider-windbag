@@ -163,6 +163,11 @@ function package() {
   fi
   popd >/dev/null 2>&1
 
+  if [[ "${ONLY_ARCHIVE:-false}" == "true" ]]; then
+    cos::log::warn "skipped as packaging image is disabled by ONLY_ARCHIVE"
+    return
+  fi
+
   # package image
   for platform in "${platforms[@]}"; do
     if [[ "${platform}" =~ (windows|darwin)/* ]]; then
@@ -189,6 +194,66 @@ function package() {
 function deploy() {
   [[ "${1:-}" != "only" && "${1:-}" != "o" ]] && package
   cos::log::info "deploying windbag..."
+
+  local repo=${REPO:-thxcode}
+  local image_name=${IMAGE_NAME:-terraform-provider-windbag}
+  local tag=${TAG:-${GIT_VERSION}}
+
+  local platforms
+  if [[ "${CROSS:-false}" == "true" ]]; then
+    cos::log::info "crossed deploying"
+    platforms=("${SUPPORTED_PLATFORMS[@]}")
+  else
+    local os="${OS:-$(go env GOOS)}"
+    local arch="${ARCH:-$(go env GOARCH)}"
+    platforms=("${os}/${arch}")
+  fi
+  local images=()
+  for platform in "${platforms[@]}"; do
+    if [[ "${platform}" =~ (windows|darwin)/* ]]; then
+      cos::log::warn "skipped as packaging ${platform} image is unavailable"
+      continue
+    fi
+
+    images+=("${repo}/${image_name}:${tag}-${platform////-}")
+  done
+  if [[ ${#images[@]} -eq 0 ]]; then
+    cos::log::warn "skipped as there are not any images to push"
+    return
+  fi
+
+  if [[ "${ONLY_ARCHIVE:-false}" == "true" ]]; then
+    cos::log::warn "skipped as pushing image is disabled by ONLY_ARCHIVE"
+    return
+  fi
+
+  local only_manifest=${ONLY_MANIFEST:-false}
+  local without_manifest=${WITHOUT_MANIFEST:-false}
+  local ignore_missing=${IGNORE_MISSING:-false}
+
+  # docker push
+  if [[ "${only_manifest}" == "false" ]]; then
+    cos::docker::push "${images[@]}"
+  else
+    cos::log::warn "deploying images has been stopped by ONLY_MANIFEST"
+    # execute manifest forcibly
+    without_manifest="false"
+  fi
+
+  # docker manifest
+  if [[ "${without_manifest}" == "false" ]]; then
+    if [[ "${ignore_missing}" == "false" ]]; then
+      cos::docker::manifest "${repo}/${image_name}:${tag}" "${images[@]}"
+    else
+      cos::manifest_tool::push from-args \
+        --ignore-missing \
+        --target="${repo}/${image_name}:${tag}" \
+        --template="${repo}/${image_name}:${tag}-OS-ARCH" \
+        --platforms="$(cos::util::join_array "," "${platforms[@]}")"
+    fi
+  else
+    cos::log::warn "deploying manifest images has been stopped by WITHOUT_MANIFEST"
+  fi
 
   cos::log::info "...done"
 }

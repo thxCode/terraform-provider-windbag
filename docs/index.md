@@ -75,13 +75,13 @@ resource "windbag_image" "pause_window" {
   }
 
   # indicate workers
-  build_worker {
+  worker {
     address = "192.168.1.4:22"
     ssh {
       password = "Windbag@Test"
     }
   }
-  build_worker {
+  worker {
     address = "192.168.1.3:22"
     ssh {
       password = "Windbag@Test"
@@ -301,10 +301,10 @@ resource "windbag_image" "default" {
     }
   }
 
-  dynamic "build_worker" {
+  dynamic "worker" {
     for_each = alicloud_eip.default.*.ip_address
     content {
-      address = format("%s:22", build_worker.value)
+      address = format("%s:22", worker.value)
       ssh {
         username = "root"
         password = var.host_password

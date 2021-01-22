@@ -25,13 +25,13 @@ resource "windbag_image" "pause_window" {
   }
 
   # indicate workers
-  build_worker {
+  worker {
     address = "192.168.1.4:22"
     ssh {
       password = "Windbag@Test"
     }
   }
-  build_worker {
+  worker {
     address = "192.168.1.3:22"
     ssh {
       password = "Windbag@Test"
