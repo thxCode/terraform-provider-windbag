@@ -29,6 +29,11 @@ func testAccResourceWindbagImageDefault() resource.TestStep {
 	)
 
 	var configTmpl = `
+provider "windbag" {
+  docker {
+    version = "19.03"
+  }
+}
 resource "windbag_image" "pause_windows" {
   path = pathexpand("testdata/pause_windows")
   tag = [

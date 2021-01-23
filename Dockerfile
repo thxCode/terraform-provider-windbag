@@ -40,4 +40,5 @@ ARG WINDBAG_VERSION=0.0.0
 ENV TERRAFORM_WINDBAG_VERSION=${WINDBAG_VERSION}
 COPY bin/terraform-provider-windbag_${TARGETOS}_${TARGETARCH} ${TF_PLUGIN_CACHE_DIR}/registry.terraform.io/thxcode/windbag/${WINDBAG_VERSION}/${TARGETOS}_${TARGETARCH}/terraform-provider-windbag_v${WINDBAG_VERSION}
 
-WORKDIR /root
+VOLUME /workspace
+WORKDIR /workspace

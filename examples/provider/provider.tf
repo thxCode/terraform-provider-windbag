@@ -1,4 +1,18 @@
-provider "windbag" {}
+provider "windbag" {
+
+  # specify the Docker as builder.
+  docker {
+
+    # specify the version of Docker,
+    # default is "19.03".
+    version = "19.03"
+
+    # specify the URI to download the Docker ZIP archive
+    download_uri = ""
+
+  }
+
+}
 
 # specify the windows image to build
 resource "windbag_image" "pause_window" {

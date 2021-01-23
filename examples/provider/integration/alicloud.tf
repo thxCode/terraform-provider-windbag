@@ -35,6 +35,7 @@ variable "host_image_list" {
   type = list(string)
   default = [
     "win2019_1809_x64_dtc_en-us_40G_container_alibase_20201120.vhd",
+    "winsvr_64_dtcC_1903_en-us_40G_alibase_20191012.vhd",
     "wincore_1909_x64_dtc_en-us_40G_container_alibase_20200723.vhd",
     "wincore_2004_x64_dtc_en-us_40G_container_alibase_20201217.vhd"
   ]
@@ -56,7 +57,7 @@ locals {
 [powershell]
 $env:SSH_USER="root";
 $env:SSH_USER_PASSWORD="<PASSWORD>";
-iwr -uri https://gist.githubusercontent.com/thxCode/cd8ec26795a56eb120b57675f0c067cf/raw/897f2c41df99832d6f88f663a9c2ac442dee4875/zz_sshd_manage.ps1 -UseBasicParsing | iex;
+Invoke-WebRequest -UseBasicParsing -Uri https://raw.githubusercontent.com/thxCode/terraform-provider-windbag/master/tools/sshd.ps1 | Invoke-Expression;
 EOF
 }
 

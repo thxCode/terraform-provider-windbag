@@ -98,6 +98,10 @@ resource "windbag_image" "example" {
       # default is "false".
       with_agent = false
 
+      # specify the timeout of dialing retry,
+      # default is "5m".
+      retry_timeout = "5m"
+
     }
   }
 

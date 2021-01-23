@@ -7,6 +7,8 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
+
+	"github.com/thxcode/terraform-provider-windbag/windbag/utils"
 )
 
 func init() {
@@ -39,7 +41,29 @@ func Provide(version string) func() *schema.Provider {
 }
 
 func registerSchema(p *schema.Provider) {
-	p.Schema = map[string]*schema.Schema{}
+	p.Schema = map[string]*schema.Schema{
+		"docker": {
+			Description: "Specify the Docker as builder.",
+			Type:        schema.TypeSet,
+			Optional:    true,
+			MaxItems:    1,
+			Elem: &schema.Resource{
+				Schema: map[string]*schema.Schema{
+					"version": {
+						Description: "Specify the version of Docker.",
+						Type:        schema.TypeString,
+						Optional:    true,
+						Default:     "19.03",
+					},
+					"download_uri": {
+						Description: "Specify the URI to download the Docker ZIP archive.",
+						Type:        schema.TypeString,
+						Optional:    true,
+					},
+				},
+			},
+		},
+	}
 }
 
 func registerDataSources(p *schema.Provider) {
@@ -52,11 +76,31 @@ func registerResources(p *schema.Provider) {
 	}
 }
 
-type provider struct{}
+type provider struct {
+	docker *dockerBuilder
+}
 
-func configure(version string, p *schema.Provider) func(context.Context, *schema.ResourceData) (interface{}, diag.Diagnostics) {
+type dockerBuilder struct {
+	Version     string
+	DownloadURI string
+}
+
+func configure(_ string, _ *schema.Provider) func(context.Context, *schema.ResourceData) (interface{}, diag.Diagnostics) {
 	return func(_ context.Context, d *schema.ResourceData) (interface{}, diag.Diagnostics) {
-		var p = &provider{}
-		return p, nil
+		var p provider
+
+		if v, ok := d.GetOk("docker"); ok {
+			var builder dockerBuilder
+			var docker = utils.ToStringInterfaceMap(v)
+			if vi, ok := docker["version"]; ok {
+				builder.Version = utils.ToString(vi)
+			}
+			if vi, ok := docker["download_uri"]; ok {
+				builder.DownloadURI = utils.ToString(vi)
+			}
+			p.docker = &builder
+		}
+
+		return &p, nil
 	}
 }

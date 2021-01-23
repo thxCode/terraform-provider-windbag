@@ -113,6 +113,10 @@ resource "windbag_image" "example" {
       # default is "false".
       with_agent = false
 
+      # specify the timeout of dialing retry,
+      # default is "5m".
+      retry_timeout = "5m"
+
     }
   }
 
@@ -168,6 +172,7 @@ Optional:
 - **cert** (String) Specify the content of Certificate to authenticate.
 - **key** (String, Sensitive) Specify the content of Private Key to authenticate.
 - **password** (String, Sensitive) Specify the password for authenticating the worker.
+- **retry_timeout** (String) Specify the timeout to retry dialing. Defaults to `5m`.
 - **username** (String) Specify the username for authenticating the worker. Defaults to `root`.
 - **with_agent** (Boolean) Specify to use ssh-agent to manage the login credential. Defaults to `false`.
 

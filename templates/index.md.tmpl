@@ -9,39 +9,35 @@ description: |-
 
 The Windbag provider is used to build and manifest the Windows image crossing multi-release Windows hosts.
 
-## Why I create this tool?
+## Why this tool?
 
-To package a Windows manifest Docker image(crossing multi-release) is a boring thing, honestly, I tired to setup these Windows hosts one-by-one and execute `docker build` from the lowest instance to highest one.
+To package a Windows manifest Docker image(crossing multi-release), we need to set up these Windows hosts one-by-one and execute `docker build` from the lowest release to the highest release.
 
-## How to enable SSH service on Windows?
+So boring~
 
-I created a script to setup the SSH service on Windows, please have a shot if you like it:
+Windbag can help you to complete the `docker build`, `docker push` and `docker manifest` without Hyper-V support.
+
+## How to enable SSH service on Windows host?
+
+You can run the following powershell commands through cloudbase-init/user-data scripts when the machine is initializing.
 
 ```powershell
 
-> # https://www.powershellgallery.com/packages/OpenSSHUtils/0.0.2.0/Content/OpenSSHUtils.psm1
-
-> # enable service
-> iwr -uri https://gist.githubusercontent.com/thxCode/cd8ec26795a56eb120b57675f0c067cf/raw/897f2c41df99832d6f88f663a9c2ac442dee4875/zz_sshd_manage.ps1 -UseBasicParsing | iex
-
-> # disable service
-> $SSHD_ENABLED="disabled"; iwr -uri https://gist.githubusercontent.com/thxCode/cd8ec26795a56eb120b57675f0c067cf/raw/897f2c41df99832d6f88f663a9c2ac442dee4875/zz_sshd_manage.ps1 -UseBasicParsing | iex
-
-> # configure a remote administrator with password
+> # enable SSH service and configure a remote administrator with password
 > $env:SSH_USER="<user name>";
 > $env:SSH_USER_PASSWORD="<user password>";
-> iwr -uri https://gist.githubusercontent.com/thxCode/cd8ec26795a56eb120b57675f0c067cf/raw/897f2c41df99832d6f88f663a9c2ac442dee4875/zz_sshd_manage.ps1 -UseBasicParsing | iex
+> Invoke-WebRequest -UseBasicParsing -Uri https://raw.githubusercontent.com/thxCode/terraform-provider-windbag/master/tools/sshd.ps1 | Invoke-Expression;
 
-> # configure a remote administrator with public key
+> # enable SSH service and configure a remote administrator with public key
 > $env:SSH_USER="<user name>";
-> $env:SSH_USER_PUBLICKEY="<user public key>";
-> iwr -uri https://gist.githubusercontent.com/thxCode/cd8ec26795a56eb120b57675f0c067cf/raw/897f2c41df99832d6f88f663a9c2ac442dee4875/zz_sshd_manage.ps1 -UseBasicParsing | iex
+> $env:SSH_USER_PUBLICKEY="<the content of user public key>";
+> Invoke-WebRequest -UseBasicParsing -Uri https://raw.githubusercontent.com/thxCode/terraform-provider-windbag/master/tools/sshd.ps1 | Invoke-Expression;
 
-> # configure a remote user with public key
+> # enable SSH service and configure a remote user with public key
 > $env:SSH_USER_GROUP="sshusers";
 > $env:SSH_USER="<user name>";
-> $env:SSH_USER_PUBLICKEY="<user public key>";
-> iwr -uri https://gist.githubusercontent.com/thxCode/cd8ec26795a56eb120b57675f0c067cf/raw/897f2c41df99832d6f88f663a9c2ac442dee4875/zz_sshd_manage.ps1 -UseBasicParsing | iex
+> $env:SSH_USER_PUBLICKEY="<the content of user public key>";
+> Invoke-WebRequest -UseBasicParsing -Uri https://raw.githubusercontent.com/thxCode/terraform-provider-windbag/master/tools/sshd.ps1 | Invoke-Expression;
 
 ```
 
@@ -64,7 +60,7 @@ I created a script to setup the SSH service on Windows, please have a shot if yo
 $ tf plan \
    --var 'access_key=...' \
    --var 'secret_key=...' \
-   --var 'host_image_list=["win2019_1809_x64_dtc_en-us_40G_container_alibase_20201120.vhd","wincore_1909_x64_dtc_en-us_40G_container_alibase_20200723.vhd","wincore_2004_x64_dtc_en-us_40G_container_alibase_20201120.vhd"]' \
+   --var 'host_image_list=["win2019_1809_x64_dtc_en-us_40G_container_alibase_20201120.vhd","winsvr_64_dtcC_1903_en-us_40G_alibase_20191012.vhd","wincore_1909_x64_dtc_en-us_40G_container_alibase_20200723.vhd","wincore_2004_x64_dtc_en-us_40G_container_alibase_20201120.vhd"]' \
    --var 'host_password=Windbag@Test' \
    --var 'image_registry_list=["registry.cn-hangzhou.aliyuncs.com", "registry.cn-hongkong.aliyuncs.com"]' \
    --var 'image_repository=foo' \

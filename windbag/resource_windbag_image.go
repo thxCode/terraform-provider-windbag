@@ -12,6 +12,7 @@ import (
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
 	"github.com/pkg/errors"
@@ -92,7 +93,6 @@ func resourceWindbagImage() *schema.Resource {
 				Description: "Specify the name of the built artifact, and use the repository of the last item as this resource ID.",
 				Type:        schema.TypeList,
 				Required:    true,
-				MinItems:    1,
 				Elem: &schema.Schema{
 					Type: schema.TypeString,
 				},
@@ -146,14 +146,13 @@ func resourceWindbagImage() *schema.Resource {
 				Description: "Specify the workers to build.",
 				Type:        schema.TypeSet,
 				Required:    true,
-				MinItems:    1,
 				Elem: &schema.Resource{
 					Schema: map[string]*schema.Schema{
 						"address": {
 							Description:  "Specify the address of worker.",
 							Type:         schema.TypeString,
 							Required:     true,
-							ValidateFunc: validationIsIPWithPort,
+							ValidateFunc: validationWindbagImageWorkerAddress,
 						},
 						"work_dir": {
 							Description: "Specify the working directory of worker.",
@@ -165,7 +164,6 @@ func resourceWindbagImage() *schema.Resource {
 							Description: "Specify to use SSH to login the worker.",
 							Type:        schema.TypeSet,
 							Required:    true,
-							MinItems:    1,
 							MaxItems:    1,
 							Elem: &schema.Resource{
 								Schema: map[string]*schema.Schema{
@@ -201,6 +199,13 @@ func resourceWindbagImage() *schema.Resource {
 										Type:        schema.TypeBool,
 										Optional:    true,
 										Default:     false,
+										ForceNew:    true,
+									},
+									"retry_timeout": {
+										Description: "Specify the timeout to retry dialing.",
+										Type:        schema.TypeString,
+										Optional:    true,
+										Default:     "5m",
 										ForceNew:    true,
 									},
 								},
@@ -272,21 +277,22 @@ func resourceWindbagImage() *schema.Resource {
 }
 
 func resourceWindbagImageCreate(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
+	var p = meta.(*provider)
 	var workers = utils.ToInterfaceSlice(d.Get("worker"))
 	var workerDialers = make(map[string]dial.Dialer, len(workers))
 	for _, w := range workers {
 		var worker = utils.ToStringInterfaceMap(w)
 		var workerAddress = utils.ToString(worker["address"])
 		var workerSSH = utils.ToStringInterfaceMap(worker["ssh"])
-		var workerDialer, err = dialWorker(workerAddress, workerSSH)
+		var workerDialer, err = p.dialWorkerBySSH(ctx, workerAddress, workerSSH)
 		if err != nil {
 			return diag.Errorf("failed to dial worker %s via SSH: %v", workerAddress, err)
 		}
 		workerDialers[workerAddress] = workerDialer
 	}
 	defer func() {
-		for _, d := range workerDialers {
-			_ = d.Close()
+		for _, workerDial := range workerDialers {
+			_ = workerDial.Close()
 		}
 	}()
 
@@ -362,7 +368,8 @@ func resourceWindbagImageCreate(ctx context.Context, d *schema.ResourceData, met
 					map[string]interface{}{
 						"WorkDir": workerWorkDir,
 					},
-					`$Path = "{{ .WorkDir }}";
+					`
+$Path = "{{ .WorkDir }}";
 if (Test-Path -Path "$Path/buildpath") {
   if (-not (Test-Path -Path "$Path/buildpath" -PathType Container)) {
     Remove-Item -Force -Path "$Path/buildpath" -ErrorAction Ignore | Out-Null;
@@ -562,6 +569,7 @@ New-Item -Force -ItemType Directory -Path "$Path/dockerfile" | Out-Null;
 }
 
 func resourceWindbagImageRead(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
+	var p = meta.(*provider)
 	var id = d.Id()
 
 	var workers = utils.ToInterfaceSlice(d.Get("worker"))
@@ -570,15 +578,15 @@ func resourceWindbagImageRead(ctx context.Context, d *schema.ResourceData, meta 
 		var worker = utils.ToStringInterfaceMap(w)
 		var workerAddress = utils.ToString(worker["address"])
 		var workerSSH = utils.ToStringInterfaceMap(worker["ssh"])
-		var workerDialer, err = dialWorker(workerAddress, workerSSH)
+		var workerDialer, err = p.dialWorkerBySSH(ctx, workerAddress, workerSSH)
 		if err != nil {
 			return diag.Errorf("failed to dial worker %s via SSH: %v", workerAddress, err)
 		}
 		workerDialers[workerAddress] = workerDialer
 	}
 	defer func() {
-		for _, d := range workerDialers {
-			_ = d.Close()
+		for _, workerDial := range workerDialers {
+			_ = workerDial.Close()
 		}
 	}()
 
@@ -831,7 +839,7 @@ func resourceWindbagImageUpdate(ctx context.Context, d *schema.ResourceData, met
 	return resourceWindbagImageCreate(ctx, d, meta) // recreate
 }
 
-func resourceWindbagImageDelete(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
+func resourceWindbagImageDelete(_ context.Context, d *schema.ResourceData, _ interface{}) diag.Diagnostics {
 	d.SetId("")
 	return nil
 }
@@ -841,7 +849,7 @@ func resourceWindbagImageID(image string) string {
 	return strings.SplitN(img.Repository, "/", 2)[1]
 }
 
-func validationIsIPWithPort(i interface{}, k string) (warnings []string, errors []error) {
+func validationWindbagImageWorkerAddress(i interface{}, k string) (warnings []string, errors []error) {
 	var v, ok = i.(string)
 	if !ok {
 		errors = append(errors, fmt.Errorf("expected type of %s to be string", k))
@@ -858,7 +866,7 @@ func validationIsIPWithPort(i interface{}, k string) (warnings []string, errors 
 	return warnings, errors
 }
 
-func dialWorker(address string, ssh map[string]interface{}) (dial.Dialer, error) {
+func (p *provider) dialWorkerBySSH(ctx context.Context, address string, ssh map[string]interface{}) (w dial.Dialer, err error) {
 	var opts dial.SSHOptions
 	opts.Address = address
 	opts.Username = utils.ToString(ssh["username"])
@@ -872,10 +880,53 @@ func dialWorker(address string, ssh map[string]interface{}) (dial.Dialer, error)
 	opts.WithAgent = utils.ToBool(ssh["with_agent"])
 
 	log.Printf("[DEBUG] Dialing worker %q via SSH\n", address)
-	var w, err = dial.SSH(opts)
+	err = resource.RetryContext(ctx, utils.ToDuration(ssh["retry_timeout"], 5*time.Minute), func() *resource.RetryError {
+		var err error
+		w, err = dial.SSH(opts)
+		if err != nil {
+			return resource.RetryableError(err)
+		}
+
+		if p.docker != nil {
+			err = w.PowerShell(ctx, nil, func(ctx context.Context, ps *powershell.PowerShell) error {
+				var psc, err = ps.Commands()
+				if err != nil {
+					return errors.Wrap(err, "failed to setup interaction")
+				}
+				defer func() {
+					if err := psc.Close(); err != nil {
+						log.Printf("[ERROR] Failed to close interaction: %v\n", err)
+					}
+				}()
+
+				var command = template.TryRender(
+					p.docker,
+					`
+$env:DOCKER_VERSION="{{ .Version }}";
+$env:DOCKER_DOWNLOAD_URI="{{ .DownloadURI }}"; 
+Invoke-WebRequest -UseBasicParsing -Uri https://raw.githubusercontent.com/thxCode/terraform-provider-windbag/master/tools/docker.ps1 | Invoke-Expression;
+`,
+				)
+				_, stderr, err := psc.Execute(ctx, address, command)
+				if err != nil {
+					return errors.Wrap(err, "failed to verify docker version")
+				}
+				if stderr != "" {
+					return errors.Errorf("error verifing docker version: %s", stderr)
+				}
+
+				return nil
+			})
+			if err != nil {
+				return resource.RetryableError(errors.Wrapf(err, "failed to verify the docker version"))
+			}
+		}
+		return nil
+	})
 	if err != nil {
 		return nil, err
 	}
 	log.Printf("[DEBUG] Dialed worker %q via SSH\n", address)
+
 	return w, nil
 }
