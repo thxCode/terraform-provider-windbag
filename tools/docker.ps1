@@ -169,7 +169,7 @@ if ([string]::IsNullOrEmpty($DOCKER_VERSION)) {
 }
 if (Test-Command -Command "dockerd") {
     $dockerVersion = ""
-    try { $dockerVersion = "$(docker info -f "{{ json .ServerVersion }}" 2>&1)" } catch { }
+    try { $dockerVersion = "$(docker info --format '{{ json .ServerVersion }}' 2>&1)" } catch { }
     if ("$dockerVersion" -like "`"${DOCKER_VERSION}*`"") {
         # start
         $service = Get-Service -Name "docker" -ErrorAction Ignore

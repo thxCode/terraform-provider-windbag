@@ -942,7 +942,7 @@ Invoke-WebRequest -UseBasicParsing -Uri https://raw.githubusercontent.com/thxCod
 		// confirm whether the docker server is established.
 		if p.docker != nil {
 			err = w.PowerShell(ctx, nil, func(ctx context.Context, ps *powershell.PowerShell) error {
-				var command = `docker info -f "{{ json .ServerVersion }}"`
+				var command = `docker info --format '{{ json .ServerVersion }}';`
 				return ps.ExecuteCommand(ctx, address, nil, nil, command)
 			})
 			if err != nil {

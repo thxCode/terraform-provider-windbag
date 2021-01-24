@@ -192,6 +192,7 @@ func (ps *PowerShell) ExecuteCommand(ctx context.Context, id string, stdout, std
 		return errors.New("can't exec blank command")
 	}
 	log.Printf("[INFO] [PowerShell -(%s)- Stdin]: %s\n", id, command)
+	command = fmt.Sprintf(`"& { $ErrorActionPreference='Stop'; $ProgressPreference='SilentlyContinue'; %s}"`, command)
 
 	if ps.executed {
 		return errors.New("cannot re-execute the powershell")
@@ -199,7 +200,7 @@ func (ps *PowerShell) ExecuteCommand(ctx context.Context, id string, stdout, std
 	ps.executed = true
 
 	// prepare
-	var args = append(ps.args, "-NoLogo", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", "$ErrorActionPreference='Stop'; $ProgressPreference='SilentlyContinue';", command)
+	var args = append(ps.args, "-NoLogo", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", command)
 
 	var session = ps.session
 	sessionStdout, err := session.StdoutPipe()
