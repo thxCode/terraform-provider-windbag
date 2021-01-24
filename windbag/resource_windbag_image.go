@@ -942,8 +942,26 @@ Invoke-WebRequest -UseBasicParsing -Uri https://raw.githubusercontent.com/thxCod
 		// confirm whether the docker server is established.
 		if p.docker != nil {
 			err = w.PowerShell(ctx, nil, func(ctx context.Context, ps *powershell.PowerShell) error {
+				var psc, err = ps.Commands()
+				if err != nil {
+					return errors.Wrap(err, "failed to setup interaction")
+				}
+				defer func() {
+					if err := psc.Close(); err != nil {
+						log.Printf("[ERROR] Failed to close interaction: %v\n", err)
+					}
+				}()
+
 				var command = `docker info --format '{{ json .ServerVersion }}';`
-				return ps.ExecuteCommand(ctx, address, nil, nil, command)
+				_, stderr, err := psc.Execute(ctx, address, command)
+				if err != nil {
+					return errors.Wrap(err, "failed to confirm the state of docker server")
+				}
+				if stderr != "" {
+					return errors.Errorf("error confirming the state of docker server: %s", stderr)
+				}
+
+				return nil
 			})
 			if err != nil {
 				return resource.RetryableError(errors.Wrap(err, "the docker server is not ready"))

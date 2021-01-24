@@ -226,7 +226,7 @@ Invoke-WebRequest -Uri "$DOCKER_DOWNLOAD_URI" -UseBasicParsing -OutFile "${env:T
 $service = Get-Service -Name "docker" -ErrorAction Ignore
 if ($service) {
     Log-Warn "Stopping the stale Docker ..."
-    Stop-Service docker -Force -ErrorAction Ignore | Out-Null
+    Stop-Service -Name "docker" -Force -ErrorAction Ignore | Out-Null
 
     Log-Warn "Removing the stale Docker from Windows Service ..."
     if (Test-Command -Command "dockerd") {
@@ -237,7 +237,17 @@ if ($service) {
 }
 
 Log-Info "Expanding the Docker archive ..."
-Expand-Archive "${env:TEMP}\docker.zip" -DestinationPath ${env:ProgramFiles} -Force -ErrorAction Ignore -WarningAction Ignore | Out-Null
+$removing = $true
+# NB(thxCode): it seems like a bug on 1903, we cannot overwrite the binaries forcely in one time.
+while ($removing) {
+    try {
+        Expand-Archive -Path "${env:TEMP}\docker.zip" -DestinationPath "${env:ProgramFiles}" -Force -ErrorAction Ignore | Out-Null
+        $removing = $false
+    } catch {
+        Log-Warn "Failed to override the stale Docker, try again."
+        Start-Sleep -Seconds 5
+    }
+}
 Remove-Item "${env:TEMP}\docker.zip" -Force | Out-Null
 
 Log-Info "Refreshing the environment path with the Docker location ..."
