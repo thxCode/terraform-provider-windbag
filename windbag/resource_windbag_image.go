@@ -205,7 +205,7 @@ func resourceWindbagImage() *schema.Resource {
 										Description: "Specify the timeout to retry dialing.",
 										Type:        schema.TypeString,
 										Optional:    true,
-										Default:     "5m",
+										Default:     "10m",
 										ForceNew:    true,
 									},
 								},
@@ -525,7 +525,7 @@ New-Item -Force -ItemType Directory -Path "$Path/dockerfile" | Out-Null;
 			// docker login
 			eg.Go(func() error {
 				var workerDialer = workerDialers[workerAddress]
-				var err = workerDialer.PowerShell(egctx, nil, func(ctx context.Context, ps *powershell.PowerShell) error {
+				err = workerDialer.PowerShell(egctx, nil, func(ctx context.Context, ps *powershell.PowerShell) error {
 					var psc, err = ps.Commands()
 					if err != nil {
 						return errors.Wrap(err, "failed to setup interaction")
@@ -881,18 +881,23 @@ func (p *provider) dialWorkerBySSH(ctx context.Context, address string, ssh map[
 
 	log.Printf("[DEBUG] Dialing worker %q via SSH\n", address)
 	var dockerBuild = p.docker
-	err = resource.RetryContext(ctx, utils.ToDuration(ssh["retry_timeout"], 5*time.Minute), func() *resource.RetryError {
+	err = resource.RetryContext(ctx, utils.ToDuration(ssh["retry_timeout"], 10*time.Minute), func() (rerr *resource.RetryError) {
 		var err error
+
+		// dail
 		w, err = dial.SSH(opts)
 		if err != nil {
 			return resource.RetryableError(err)
 		}
+		defer func() {
+			if rerr != nil && w != nil {
+				_ = w.Close()
+				log.Printf("[DEBUG] Closed SSH dialer of worker %q as a retry error\n", address)
+			}
+		}()
 
-		// NB(thxCode): there is not robust solution to confirm that
-		// a fresh host has been installed the Docker and restarted,
-		// so we paused for 5 seconds and then dail again.
+		// confirm whether the docker version is matched.
 		if dockerBuild != nil {
-			defer w.Close()
 			err = w.PowerShell(ctx, nil, func(ctx context.Context, ps *powershell.PowerShell) error {
 				var psc, err = ps.Commands()
 				if err != nil {
@@ -923,11 +928,28 @@ Invoke-WebRequest -UseBasicParsing -Uri https://raw.githubusercontent.com/thxCod
 				return nil
 			})
 			if err != nil {
-				return resource.RetryableError(errors.Wrapf(err, "failed to verify the docker version"))
+				return resource.RetryableError(errors.Wrap(err, "failed to verify the docker version"))
 			}
+
+			// NB(thxCode): there is not robust solution to confirm that
+			// a fresh host has been installed the docker server and restarted,
+			// so we paused for 5 seconds and then dail again.
+			time.Sleep(5 * time.Second)
 			dockerBuild = nil
 			return resource.RetryableError(errors.New("retry again"))
 		}
+
+		// confirm whether the docker server is established.
+		if p.docker != nil {
+			err = w.PowerShell(ctx, nil, func(ctx context.Context, ps *powershell.PowerShell) error {
+				var command = `docker info -f "{{ json .ServerVersion }}"`
+				return ps.ExecuteCommand(ctx, address, nil, nil, command)
+			})
+			if err != nil {
+				return resource.RetryableError(errors.Wrap(err, "the docker server is not ready"))
+			}
+		}
+
 		return nil
 	})
 	if err != nil {
