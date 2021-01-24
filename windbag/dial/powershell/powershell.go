@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"strings"
+	"time"
 
 	"github.com/pkg/errors"
 	"golang.org/x/crypto/ssh"
@@ -403,21 +404,20 @@ func (psc *Commands) Execute(ctx context.Context, id string, command string) (st
 }
 
 func (psc *Commands) Close() error {
-	_, err := psc.sessionStdin.Write([]byte(`exit\r\n`))
-	if err != nil {
-		return err
-	}
+	defer utils.HandleCrash()
 
-	err = psc.sessionStdin.Close()
-	if err != nil {
-		return err
-	}
+	_, _ = psc.sessionStdin.Write([]byte("exit\r\n"))
+	_ = psc.sessionStdin.Close()
 
-	err = psc.session.Wait()
-	if err != nil {
-		if _, ok := err.(*ssh.ExitError); ok {
-			return nil
-		}
+	// NB(thxCode): shutdown the session gracefully.
+	var errCh = make(chan error)
+	go func() {
+		defer utils.HandleCrashSilent()
+		errCh <- psc.session.Wait()
+	}()
+	select {
+	case <-errCh:
+	case <-time.After(2 * time.Second):
 	}
 	return nil
 }

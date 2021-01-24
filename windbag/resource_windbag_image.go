@@ -880,6 +880,7 @@ func (p *provider) dialWorkerBySSH(ctx context.Context, address string, ssh map[
 	opts.WithAgent = utils.ToBool(ssh["with_agent"])
 
 	log.Printf("[DEBUG] Dialing worker %q via SSH\n", address)
+	var dockerBuild = p.docker
 	err = resource.RetryContext(ctx, utils.ToDuration(ssh["retry_timeout"], 5*time.Minute), func() *resource.RetryError {
 		var err error
 		w, err = dial.SSH(opts)
@@ -887,7 +888,11 @@ func (p *provider) dialWorkerBySSH(ctx context.Context, address string, ssh map[
 			return resource.RetryableError(err)
 		}
 
-		if p.docker != nil {
+		// NB(thxCode): there is not robust solution to confirm that
+		// a fresh host has been installed the Docker and restarted,
+		// so we paused for 5 seconds and then dail again.
+		if dockerBuild != nil {
+			defer w.Close()
 			err = w.PowerShell(ctx, nil, func(ctx context.Context, ps *powershell.PowerShell) error {
 				var psc, err = ps.Commands()
 				if err != nil {
@@ -920,6 +925,8 @@ Invoke-WebRequest -UseBasicParsing -Uri https://raw.githubusercontent.com/thxCod
 			if err != nil {
 				return resource.RetryableError(errors.Wrapf(err, "failed to verify the docker version"))
 			}
+			dockerBuild = nil
+			return resource.RetryableError(errors.New("retry again"))
 		}
 		return nil
 	})

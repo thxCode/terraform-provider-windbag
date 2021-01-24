@@ -168,11 +168,13 @@ if ([string]::IsNullOrEmpty($DOCKER_VERSION)) {
     exit 0
 }
 if (Test-Command -Command "dockerd") {
-    if ($(docker info -f "{{ json .ServerVersion }}") -like "`"${docker_version}*`"") {
+    $dockerVersion = ""
+    try { $dockerVersion = "$(docker info -f "{{ json .ServerVersion }}" 2>&1)" } catch { }
+    if ("$dockerVersion" -like "`"${DOCKER_VERSION}*`"") {
         # start
         $service = Get-Service -Name "docker" -ErrorAction Ignore
         if (-not $service) {
-            dockerd --register-service --experimental 2>&1 | Out-Null
+            "$(dockerd --register-service --experimental)" | Out-Null
             $service = Get-Service -Name "docker" -ErrorAction Ignore
         }
         if (-not $service) {
@@ -224,25 +226,24 @@ Invoke-WebRequest -Uri "$DOCKER_DOWNLOAD_URI" -UseBasicParsing -OutFile "${env:T
 $service = Get-Service -Name "docker" -ErrorAction Ignore
 if ($service) {
     Log-Warn "Stopping the stale Docker ..."
-    Stop-Service docker -Force | Out-Null
+    Stop-Service docker -Force -ErrorAction Ignore | Out-Null
 
     Log-Warn "Removing the stale Docker from Windows Service ..."
     if (Test-Command -Command "dockerd") {
-        dockerd --unregister-service | Out-Null
+        dockerd --unregister-service 2>&1 | Out-Null
     } else {
-        sc.exe delete docker | Out-Null
+        sc.exe delete docker 2>&1 | Out-Null
     }
-} else {
-
 }
 
 Log-Info "Expanding the Docker archive ..."
-Expand-Archive "${env:TEMP}\docker.zip" -DestinationPath ${env:TEMP} -Force | Out-Null
+Expand-Archive "${env:TEMP}\docker.zip" -DestinationPath ${env:ProgramFiles} -Force -ErrorAction Ignore -WarningAction Ignore | Out-Null
 Remove-Item "${env:TEMP}\docker.zip" -Force | Out-Null
 
 Log-Info "Refreshing the environment path with the Docker location ..."
 $path = "${env:ProgramFiles}\docker;$(Get-Env -Key "Path")"
 Set-Env -Key "Path" -Value $path
+$env:Path = $path
 
 Log-Info "Registering the Docker to Windows Service ..."
 dockerd --register-service --experimental 2>&1 | Out-Null
@@ -260,6 +261,6 @@ if ($iwfr.RestartNeeded -ne "No") {
     exit 1
 }
 $service | Where-Object {$_.Status -ne "Running"} | Start-Service -ErrorAction Ignore -WarningAction Ignore | Out-Null
-docker info
+Log-Info "Docker version: $(docker info -f "{{ json .ServerVersion }}" 2>&1)"
 
 Log-Info "Finished"
