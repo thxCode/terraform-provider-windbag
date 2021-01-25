@@ -711,41 +711,41 @@ func resourceWindbagImageRead(ctx context.Context, d *schema.ResourceData, meta 
 		eg.Go(func() error {
 			log.Printf("[INFO] Pushing image %q on worker %q\n", id, workerAddress)
 			var workerDialer = workerDialers[workerAddress]
-			var err = resource.RetryContext(egctx, utils.ToDuration(d.Get("push_timeout"), 15*time.Minute), func() *resource.RetryError {
-				var err = workerDialer.PowerShell(egctx, nil, func(ctx context.Context, ps *powershell.PowerShell) error {
-					var psc, err = ps.Commands()
-					if err != nil {
-						return errors.Wrap(err, "failed to setup interaction")
+			var err = workerDialer.PowerShell(egctx, nil, func(ctx context.Context, ps *powershell.PowerShell) error {
+				var psc, err = ps.Commands()
+				if err != nil {
+					return errors.Wrap(err, "failed to setup interaction")
+				}
+				defer func() {
+					if err := psc.Close(); err != nil {
+						log.Printf("[ERROR] Failed to close interaction: %v\n", err)
 					}
-					defer func() {
-						if err := psc.Close(); err != nil {
-							log.Printf("[ERROR] Failed to close interaction: %v\n", err)
-						}
-					}()
+				}()
 
-					var workerBuildInformation = utils.ToStringInterfaceMap(pushWorker["build_information"])
-					var workerRelease = utils.ToString(workerBuildInformation["os_release"])
-					var workerArch = utils.ToString(workerBuildInformation["os_arch"])
-					var workerTagSuffix = fmt.Sprintf("windows-%s-%s", workerArch, workerRelease)
+				var workerBuildInformation = utils.ToStringInterfaceMap(pushWorker["build_information"])
+				var workerRelease = utils.ToString(workerBuildInformation["os_release"])
+				var workerArch = utils.ToString(workerBuildInformation["os_arch"])
+				var workerTagSuffix = fmt.Sprintf("windows-%s-%s", workerArch, workerRelease)
 
-					// push tags one by one
-					for _, tag := range buildOpts.Tags {
+				// push tags one by one
+				for _, tag := range buildOpts.Tags {
+					log.Printf("[DEBUG] Pushing tag %q on worker %q\n", tag, workerAddress)
+					err = resource.RetryContext(egctx, utils.ToDuration(d.Get("push_timeout"), 15*time.Minute), func() *resource.RetryError {
 						tag = fmt.Sprintf("%s-%s", tag, workerTagSuffix)
-						log.Printf("[DEBUG] Pushing tag %q on worker %q\n", tag, workerAddress)
 						var command = docker.ConstructImagePushCommand(tag)
 						_, stderr, err := psc.Execute(ctx, workerID, command)
 						if err != nil {
-							return errors.Wrapf(err, "failed to push tag %s", tag)
+							return resource.RetryableError(errors.Wrapf(err, "failed to push tag %s", tag))
 						}
 						if stderr != "" {
-							return errors.Errorf("error pushing tag %s: %s", tag, stderr)
+							return resource.RetryableError(errors.Errorf("error pushing tag %s: %s", tag, stderr))
 						}
-						log.Printf("[DEBUG] Pushed tag %q on worker %q\n", tag, workerAddress)
+						return nil
+					})
+					if err != nil {
+						return err
 					}
-					return nil
-				})
-				if err != nil {
-					return resource.RetryableError(errors.Wrapf(err, "error executing docker-push command on worker %s", workerAddress))
+					log.Printf("[DEBUG] Pushed tag %q on worker %q\n", tag, workerAddress)
 				}
 				return nil
 			})
