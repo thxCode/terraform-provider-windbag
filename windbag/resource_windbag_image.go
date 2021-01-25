@@ -39,8 +39,11 @@ func resourceWindbagImage() *schema.Resource {
 		},
 
 		Timeouts: &schema.ResourceTimeout{
+			Default: schema.DefaultTimeout(30 * time.Minute),
 			Create: schema.DefaultTimeout(1 * time.Hour),
 			Read:   schema.DefaultTimeout(2 * time.Hour),
+			Update: schema.DefaultTimeout(2 * time.Hour),
+			Delete: schema.DefaultTimeout(1 * time.Hour),
 		},
 
 		Schema: map[string]*schema.Schema{
