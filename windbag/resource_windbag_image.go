@@ -113,6 +113,12 @@ func resourceWindbagImage() *schema.Resource {
 				Optional:    true,
 				Default:     true,
 			},
+			"push_timeout": {
+				Description: "Specify the timeout to push.",
+				Type:        schema.TypeString,
+				Optional:    true,
+				Default:     "15m",
+			},
 			"registry": {
 				Description: "Specify the authentication registry of registry.",
 				Type:        schema.TypeSet,
@@ -620,7 +626,7 @@ func resourceWindbagImageRead(ctx context.Context, d *schema.ResourceData, meta 
 
 		// docker build
 		eg.Go(func() error {
-			log.Printf("[INFO] Building image %s on worker %s\n", id, workerAddress)
+			log.Printf("[INFO] Building image %q on worker %q\n", id, workerAddress)
 			var workerDialer = workerDialers[workerAddress]
 			var err = workerDialer.PowerShell(egctx, nil, func(ctx context.Context, ps *powershell.PowerShell) error {
 				var psc, err = ps.Commands()
@@ -676,7 +682,7 @@ func resourceWindbagImageRead(ctx context.Context, d *schema.ResourceData, meta 
 			if err != nil {
 				return errors.Wrapf(err, "error executing docker-build command on worker %s", workerAddress)
 			}
-			log.Printf("[INFO] Built image %s on worker %s\n", id, workerAddress)
+			log.Printf("[INFO] Built image %q on worker %q\n", id, workerAddress)
 			return nil
 		})
 	}
@@ -703,43 +709,51 @@ func resourceWindbagImageRead(ctx context.Context, d *schema.ResourceData, meta 
 
 		// docker push
 		eg.Go(func() error {
-			log.Printf("[INFO] Pushing image %s on worker %s\n", id, workerAddress)
+			log.Printf("[INFO] Pushing image %q on worker %q\n", id, workerAddress)
 			var workerDialer = workerDialers[workerAddress]
-			var err = workerDialer.PowerShell(egctx, nil, func(ctx context.Context, ps *powershell.PowerShell) error {
-				var psc, err = ps.Commands()
-				if err != nil {
-					return errors.Wrap(err, "failed to setup interaction")
-				}
-				defer func() {
-					if err := psc.Close(); err != nil {
-						log.Printf("[ERROR] Failed to close interaction: %v\n", err)
-					}
-				}()
-
-				var workerBuildInformation = utils.ToStringInterfaceMap(pushWorker["build_information"])
-				var workerRelease = utils.ToString(workerBuildInformation["os_release"])
-				var workerArch = utils.ToString(workerBuildInformation["os_arch"])
-				var workerTagSuffix = fmt.Sprintf("windows-%s-%s", workerArch, workerRelease)
-
-				for _, tag := range buildOpts.Tags {
-					tag = fmt.Sprintf("%s-%s", tag, workerTagSuffix)
-					log.Printf("[DEBUG] Pushing tag %q on worker %q\n", tag, workerAddress)
-					var command = docker.ConstructImagePushCommand(tag)
-					_, stderr, err := psc.Execute(ctx, workerID, command)
+			var err = resource.RetryContext(egctx, utils.ToDuration(d.Get("push_timeout"), 15*time.Minute), func() *resource.RetryError {
+				var err = workerDialer.PowerShell(egctx, nil, func(ctx context.Context, ps *powershell.PowerShell) error {
+					var psc, err = ps.Commands()
 					if err != nil {
-						return errors.Wrapf(err, "failed to push tag %s", tag)
+						return errors.Wrap(err, "failed to setup interaction")
 					}
-					if stderr != "" {
-						return errors.Errorf("error pushing tag %s: %s", tag, stderr)
+					defer func() {
+						if err := psc.Close(); err != nil {
+							log.Printf("[ERROR] Failed to close interaction: %v\n", err)
+						}
+					}()
+
+					var workerBuildInformation = utils.ToStringInterfaceMap(pushWorker["build_information"])
+					var workerRelease = utils.ToString(workerBuildInformation["os_release"])
+					var workerArch = utils.ToString(workerBuildInformation["os_arch"])
+					var workerTagSuffix = fmt.Sprintf("windows-%s-%s", workerArch, workerRelease)
+
+					// push tags one by one
+					for _, tag := range buildOpts.Tags {
+						tag = fmt.Sprintf("%s-%s", tag, workerTagSuffix)
+						log.Printf("[DEBUG] Pushing tag %q on worker %q\n", tag, workerAddress)
+						var command = docker.ConstructImagePushCommand(tag)
+						_, stderr, err := psc.Execute(ctx, workerID, command)
+						if err != nil {
+							return errors.Wrapf(err, "failed to push tag %s", tag)
+						}
+						if stderr != "" {
+							return errors.Errorf("error pushing tag %s: %s", tag, stderr)
+						}
+						log.Printf("[DEBUG] Pushed tag %q on worker %q\n", tag, workerAddress)
 					}
-					log.Printf("[DEBUG] Pushed tag %q on worker %q\n", tag, workerAddress)
+					return nil
+				})
+				if err != nil {
+					return resource.RetryableError(errors.Wrapf(err, "error executing docker-push command on worker %s", workerAddress))
 				}
 				return nil
 			})
 			if err != nil {
+				log.Printf("[ERROR] Failed to push image %q on worker %q\n", id, workerAddress)
 				return errors.Wrapf(err, "error executing docker-push command on worker %s", workerAddress)
 			}
-			log.Printf("[INFO] Pushed image %s on worker %s\n", id, workerAddress)
+			log.Printf("[INFO] Pushed image %q on worker %q\n", id, workerAddress)
 			return nil
 		})
 	}
@@ -752,7 +766,7 @@ func resourceWindbagImageRead(ctx context.Context, d *schema.ResourceData, meta 
 		manifest
 	*/
 
-	log.Printf("[INFO] Manifesting image %s\n", id)
+	log.Printf("[INFO] Manifesting image %q\n", id)
 	var manifestWorker, tagSuffixes = func() (manifestWorker map[string]interface{}, tagSuffixes []string) {
 		var manifestWorkerBuild int
 		for _, w := range workers {
@@ -784,52 +798,59 @@ func resourceWindbagImageRead(ctx context.Context, d *schema.ResourceData, meta 
 
 		// docker manifest
 		eg.Go(func() error {
-			log.Printf("[INFO] Manifesting image %s on worker %s\n", id, workerAddress)
+			log.Printf("[INFO] Manifesting image %q on worker %q\n", id, workerAddress)
 			var workerDialer = workerDialers[workerAddress]
-			var err = workerDialer.PowerShell(egctx, nil, func(ctx context.Context, ps *powershell.PowerShell) error {
-				var psc, err = ps.Commands()
-				if err != nil {
-					return errors.Wrap(err, "failed to setup interaction")
-				}
-				defer func() {
-					if err := psc.Close(); err != nil {
-						log.Printf("[ERROR] Failed to close interaction: %v\n", err)
+			var err = resource.RetryContext(egctx, utils.ToDuration(d.Get("push_timeout"), 15*time.Minute), func() *resource.RetryError {
+				var err = workerDialer.PowerShell(egctx, nil, func(ctx context.Context, ps *powershell.PowerShell) error {
+					var psc, err = ps.Commands()
+					if err != nil {
+						return errors.Wrap(err, "failed to setup interaction")
 					}
-				}()
+					defer func() {
+						if err := psc.Close(); err != nil {
+							log.Printf("[ERROR] Failed to close interaction: %v\n", err)
+						}
+					}()
 
-				// manifest create
-				var command = docker.ConstructManifestCreateCommand(tag, manifests...)
-				_, stderr, err := psc.Execute(ctx, workerID, command)
+					// manifest create
+					var command = docker.ConstructManifestCreateCommand(tag, manifests...)
+					_, stderr, err := psc.Execute(ctx, workerID, command)
+					if err != nil {
+						return errors.Wrap(err, "failed to execute docker manifest creation")
+					}
+					if stderr != "" {
+						return errors.Errorf("error executing docker manifest creation: %s", stderr)
+					}
+
+					// manifest push
+					command = docker.ConstructManifestPushCommand(tag)
+					_, stderr, err = psc.Execute(ctx, workerID, command)
+					if err != nil {
+						return errors.Wrap(err, "failed to execute docker manifest pushing")
+					}
+					if stderr != "" {
+						return errors.Errorf("error executing docker manifest pushing: %s", stderr)
+					}
+
+					return nil
+				})
 				if err != nil {
-					return errors.Wrap(err, "failed to execute docker manifest creation")
+					return resource.RetryableError(errors.Wrapf(err, "error executing docker-manifest command on worker %s", workerAddress))
 				}
-				if stderr != "" {
-					return errors.Errorf("error executing docker manifest creation: %s", stderr)
-				}
-
-				// manifest push
-				command = docker.ConstructManifestPushCommand(tag)
-				_, stderr, err = psc.Execute(ctx, workerID, command)
-				if err != nil {
-					return errors.Wrap(err, "failed to execute docker manifest pushing")
-				}
-				if stderr != "" {
-					return errors.Errorf("error executing docker manifest pushing: %s", stderr)
-				}
-
 				return nil
 			})
 			if err != nil {
+				log.Printf("[ERROR] Failed to manifest image %q on worker %q\n", id, workerAddress)
 				return errors.Wrapf(err, "error executing docker-manifest command on worker %s", workerAddress)
 			}
-			log.Printf("[INFO] Manifested image %s on worker %s\n", id, workerAddress)
+			log.Printf("[INFO] Manifested image %q on worker %q\n", id, workerAddress)
 			return nil
 		})
 	}
 	if err := eg.Wait(); err != nil {
 		return diag.Errorf("failed to manifest image %s: %v", id, err)
 	}
-	log.Printf("[INFO] Manifested image %s\n", id)
+	log.Printf("[INFO] Manifested image %q\n", id)
 
 	return nil
 }
