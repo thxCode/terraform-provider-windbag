@@ -835,8 +835,11 @@ func resourceWindbagImageRead(ctx context.Context, d *schema.ResourceData, meta 
 }
 
 func resourceWindbagImageUpdate(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
-	d.SetId("")
-	return resourceWindbagImageCreate(ctx, d, meta) // recreate
+	if d.HasChangeExcept("push") {
+		d.SetId("")
+		return resourceWindbagImageCreate(ctx, d, meta) // recreate
+	}
+	return resourceWindbagImageRead(ctx, d, meta)
 }
 
 func resourceWindbagImageDelete(_ context.Context, d *schema.ResourceData, _ interface{}) diag.Diagnostics {
