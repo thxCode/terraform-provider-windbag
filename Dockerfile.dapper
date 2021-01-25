@@ -27,7 +27,7 @@ RUN curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/i
 ## install goreleaser
 RUN curl -sSfL https://install.goreleaser.com/github.com/goreleaser/goreleaser.sh | sh -s -- -b "$(go env GOPATH)/bin" v0.155.0
 ## install terraform
-RUN curl -sSfL "https://releases.hashicorp.com/terraform/0.14.4/terraform_0.14.4_$(go env GOOS)_$(go env GOARCH).zip" -o /tmp/terraform.zip \
+RUN curl -sSfL "https://releases.hashicorp.com/terraform/0.14.5/terraform_0.14.5_$(go env GOOS)_$(go env GOARCH).zip" -o /tmp/terraform.zip \
     && unzip -o /tmp/terraform.zip -d /tmp \
     && chmod +x /tmp/terraform && mv /tmp/terraform "$(go env GOPATH)/terraform"
 ## install manifest-tool

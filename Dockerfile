@@ -12,7 +12,7 @@ ARG TARGETOS
 ARG TARGETARCH
 
 # install terraform client
-ENV TERRAFORM_VERSION=0.14.4
+ENV TERRAFORM_VERSION=0.14.5
 RUN curl -fL "https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_${TARGETOS}_${TARGETARCH}.zip" -o "/tmp/terraform.zip" \
     && unzip -o "/tmp/terraform.zip" -d "/tmp" && chmod a+x "/tmp/terraform" \
     && mv -f "/tmp/terraform" /usr/bin/ \
