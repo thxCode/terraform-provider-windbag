@@ -195,11 +195,11 @@ if (-not $sshd) {
     Log-Fatal "Could not find sshd service"
 }
 if ($sshd.StartupType -ne 'Automatic') {
-    Set-Service sshd -StartupType 'Automatic' -ErrorAction Ignore
+    Set-Service -Name "sshd" -StartupType 'Automatic' -ErrorAction Ignore
 }
 if ($sshd.Status -ne 'Running') {
     Log-Info "Starting sshd ..."
-    Start-Service sshd -ErrorAction Ignore
+    Start-Service -Name "sshd" -ErrorAction Ignore
     if (-not $?) {
         Log-Fatal "Failed to start sshd service"
     }
@@ -279,4 +279,6 @@ if ($SSH_USER) {
     }
 }
 
-Log-Info "Finished"
+Log-Info "Finished, and going to restart the computer immediatly"
+
+Restart-Computer

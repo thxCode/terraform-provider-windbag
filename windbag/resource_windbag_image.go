@@ -936,8 +936,8 @@ Invoke-WebRequest -UseBasicParsing -Uri https://raw.githubusercontent.com/thxCod
 
 			// NB(thxCode): there is not robust solution to confirm that
 			// a fresh host has been installed the docker server and restarted,
-			// so we paused for 5 seconds and then dail again.
-			time.Sleep(5 * time.Second)
+			// so we paused for 10 seconds and then dail again.
+			time.Sleep(10 * time.Second)
 			dockerBuild = nil
 			return resource.RetryableError(errors.New("retry again"))
 		}
@@ -967,6 +967,7 @@ Invoke-WebRequest -UseBasicParsing -Uri https://raw.githubusercontent.com/thxCod
 				return nil
 			})
 			if err != nil {
+				time.Sleep(10 * time.Second)
 				return resource.RetryableError(errors.Wrap(err, "the docker server is not ready"))
 			}
 		}

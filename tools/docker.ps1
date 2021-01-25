@@ -238,7 +238,9 @@ if ($service) {
 
 Log-Info "Expanding the Docker archive ..."
 $removing = $true
-# NB(thxCode): it seems like a bug on 1903, we cannot overwrite the binaries forcely in one time.
+# NB(thxCode): it seems like a bug on 1903,
+# we cannot overwrite the binaries forcely in one time.
+# --- LEGACY_PROTECTION ---
 while ($removing) {
     try {
         Expand-Archive -Path "${env:TEMP}\docker.zip" -DestinationPath "${env:ProgramFiles}" -Force -ErrorAction Ignore | Out-Null
@@ -248,6 +250,7 @@ while ($removing) {
         Start-Sleep -Seconds 5
     }
 }
+# --- LEGACY_PROTECTION ---
 Remove-Item "${env:TEMP}\docker.zip" -Force | Out-Null
 
 Log-Info "Refreshing the environment path with the Docker location ..."
