@@ -142,6 +142,7 @@ resource "windbag_image" "example" {
 - **no_cache** (Boolean) Specify the isolation technology of container. Defaults to `false`.
 - **path** (String) Specify the path to build.
 - **push** (Boolean) Specify to push the build artifact. Defaults to `true`.
+- **push_timeout** (String) Specify the timeout to push. Defaults to `15m`.
 - **registry** (Block Set) Specify the authentication registry of registry. (see [below for nested schema](#nestedblock--registry))
 - **rm** (Boolean) Specify to remove intermediate containers after a successful build. Defaults to `true`.
 - **target** (String) Specify the target of build stage to build.
@@ -211,6 +212,7 @@ Required:
 Optional:
 
 - **address** (String) Specify the address of the registry. Defaults to `docker.io`.
+- **login_timeout** (String) Specify the timeout to login. Defaults to `5m`.
 
 
 <a id="nestedblock--timeouts"></a>
@@ -219,6 +221,9 @@ Optional:
 Optional:
 
 - **create** (String)
+- **default** (String)
+- **delete** (String)
 - **read** (String)
+- **update** (String)
 
 

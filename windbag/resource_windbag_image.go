@@ -40,10 +40,10 @@ func resourceWindbagImage() *schema.Resource {
 
 		Timeouts: &schema.ResourceTimeout{
 			Default: schema.DefaultTimeout(30 * time.Minute),
-			Create: schema.DefaultTimeout(1 * time.Hour),
-			Read:   schema.DefaultTimeout(2 * time.Hour),
-			Update: schema.DefaultTimeout(2 * time.Hour),
-			Delete: schema.DefaultTimeout(1 * time.Hour),
+			Create:  schema.DefaultTimeout(1 * time.Hour),
+			Read:    schema.DefaultTimeout(2 * time.Hour),
+			Update:  schema.DefaultTimeout(2 * time.Hour),
+			Delete:  schema.DefaultTimeout(1 * time.Hour),
 		},
 
 		Schema: map[string]*schema.Schema{
@@ -147,6 +147,13 @@ func resourceWindbagImage() *schema.Resource {
 							Required:    true,
 							ForceNew:    true,
 							Sensitive:   true,
+						},
+						"login_timeout": {
+							Description: "Specify the timeout to login.",
+							Type:        schema.TypeString,
+							Optional:    true,
+							Default:     "5m",
+							ForceNew:    true,
 						},
 					},
 				},
@@ -529,6 +536,7 @@ New-Item -Force -ItemType Directory -Path "$Path/dockerfile" | Out-Null;
 		for _, w := range workers {
 			var loginWorker = utils.ToStringInterfaceMap(w)
 			var workerAddress = utils.ToString(loginWorker["address"])
+			var workerLoginTimeout = utils.ToDuration(loginWorker["login_timeout"], 5*time.Minute)
 			var workerID = fmt.Sprintf("%s/%s", workerAddress, id)
 
 			// docker login
@@ -547,15 +555,21 @@ New-Item -Force -ItemType Directory -Path "$Path/dockerfile" | Out-Null;
 
 					for reg := range registryLoginCommands {
 						log.Printf("[DEBUG] Logining registry %q on worker %q\n", reg, workerAddress)
-						var command = registryLoginCommands[reg]
-						var stdout, stderr, err = psc.Execute(ctx, workerID, command)
-						if err != nil {
-							return errors.Wrapf(err, "failed to login registry %s", reg)
-						}
-						if stderr != "" {
-							if !strings.HasPrefix(stdout, "Login Succeeded") {
-								return errors.Errorf("error loging registry %s: %s", reg, stderr)
+						var err = resource.RetryContext(egctx, workerLoginTimeout, func() *resource.RetryError {
+							var command = registryLoginCommands[reg]
+							var stdout, stderr, err = psc.Execute(ctx, workerID, command)
+							if err != nil {
+								return resource.RetryableError(errors.Wrapf(err, "failed to login registry %s", reg))
 							}
+							if stderr != "" {
+								if !strings.HasPrefix(stdout, "Login Succeeded") {
+									return resource.RetryableError(errors.Errorf("error loging registry %s: %s", reg, stderr))
+								}
+							}
+							return nil
+						})
+						if err != nil {
+							return err
 						}
 						log.Printf("[INFO] Logon registry %q on worker %q\n", reg, workerAddress)
 					}
@@ -702,6 +716,7 @@ func resourceWindbagImageRead(ctx context.Context, d *schema.ResourceData, meta 
 		log.Printf("[WARN] Skipped to push the image %q", id)
 		return nil
 	}
+	var workerPushTimeout = utils.ToDuration(d.Get("push_timeout"), 15*time.Minute)
 
 	log.Printf("[INFO] Pushing image %q\n", id)
 	eg, egctx = errgroup.WithContext(ctx)
@@ -733,7 +748,7 @@ func resourceWindbagImageRead(ctx context.Context, d *schema.ResourceData, meta 
 				// push tags one by one
 				for _, tag := range buildOpts.Tags {
 					log.Printf("[DEBUG] Pushing tag %q on worker %q\n", tag, workerAddress)
-					err = resource.RetryContext(egctx, utils.ToDuration(d.Get("push_timeout"), 15*time.Minute), func() *resource.RetryError {
+					err = resource.RetryContext(egctx, workerPushTimeout, func() *resource.RetryError {
 						tag = fmt.Sprintf("%s-%s", tag, workerTagSuffix)
 						var command = docker.ConstructImagePushCommand(tag)
 						_, stderr, err := psc.Execute(ctx, workerID, command)
@@ -764,10 +779,6 @@ func resourceWindbagImageRead(ctx context.Context, d *schema.ResourceData, meta 
 		return diag.Errorf("failed to push image %s: %v", id, err)
 	}
 	log.Printf("[INFO] Pushed image %q\n", id)
-
-	/*
-		manifest
-	*/
 
 	log.Printf("[INFO] Manifesting image %q\n", id)
 	var manifestWorker, tagSuffixes = func() (manifestWorker map[string]interface{}, tagSuffixes []string) {
@@ -803,7 +814,7 @@ func resourceWindbagImageRead(ctx context.Context, d *schema.ResourceData, meta 
 		eg.Go(func() error {
 			log.Printf("[INFO] Manifesting image %q on worker %q\n", id, workerAddress)
 			var workerDialer = workerDialers[workerAddress]
-			var err = resource.RetryContext(egctx, utils.ToDuration(d.Get("push_timeout"), 15*time.Minute), func() *resource.RetryError {
+			var err = resource.RetryContext(egctx, workerPushTimeout, func() *resource.RetryError {
 				var err = workerDialer.PowerShell(egctx, nil, func(ctx context.Context, ps *powershell.PowerShell) error {
 					var psc, err = ps.Commands()
 					if err != nil {
