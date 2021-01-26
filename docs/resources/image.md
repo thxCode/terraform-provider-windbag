@@ -69,6 +69,10 @@ resource "windbag_image" "example" {
   # default is "true".
   push = true
 
+  # specify the timeout to push,
+  # default is "15m".
+  push_timeout = "15m"
+
   # Specify the authentication registry of registry.
   registry {
 
@@ -81,6 +85,9 @@ resource "windbag_image" "example" {
     # specify the password of registry credential.
     password = ""
 
+    # specify the timeout of login,
+    # default is "5m".
+    login_timeout = "5m"
   }
 
   # specify the workers to build image,
@@ -114,8 +121,8 @@ resource "windbag_image" "example" {
       with_agent = false
 
       # specify the timeout of dialing retry,
-      # default is "5m".
-      retry_timeout = "5m"
+      # default is "10m".
+      retry_timeout = "10m"
 
     }
   }
