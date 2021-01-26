@@ -679,8 +679,8 @@ func resourceWindbagImageRead(ctx context.Context, d *schema.ResourceData, meta 
 					opts.Dockerfile = utils.ToString(workerBuildContext["dockerfile"])
 					// redirect tag
 					var tags = make([]string, 0, len(opts.Tags))
-					for _, t := range opts.Tags {
-						tags = append(tags, fmt.Sprintf("%s-%s", t, workerTagSuffix))
+					for ti := range opts.Tags {
+						tags = append(tags, fmt.Sprintf("%s-%s", opts.Tags[ti], workerTagSuffix))
 					}
 					opts.Tags = tags
 					// render
@@ -746,10 +746,11 @@ func resourceWindbagImageRead(ctx context.Context, d *schema.ResourceData, meta 
 				var workerTagSuffix = fmt.Sprintf("windows-%s-%s", workerArch, workerRelease)
 
 				// push tags one by one
-				for _, tag := range buildOpts.Tags {
+				for ti := range buildOpts.Tags {
+					var tag = buildOpts.Tags[ti]
+					tag = fmt.Sprintf("%s-%s", tag, workerTagSuffix)
 					log.Printf("[DEBUG] Pushing tag %q on worker %q\n", tag, workerAddress)
 					err = resource.RetryContext(egctx, workerPushTimeout, func() *resource.RetryError {
-						tag = fmt.Sprintf("%s-%s", tag, workerTagSuffix)
 						var command = docker.ConstructImagePushCommand(tag)
 						_, stderr, err := psc.Execute(ctx, workerID, command)
 						if err != nil {
@@ -804,10 +805,11 @@ func resourceWindbagImageRead(ctx context.Context, d *schema.ResourceData, meta 
 	var workerAddress = utils.ToString(manifestWorker["address"])
 	var workerID = fmt.Sprintf("%s/%s", workerAddress, id)
 	eg, egctx = errgroup.WithContext(ctx)
-	for _, tag := range buildOpts.Tags {
+	for ti := range buildOpts.Tags {
+		var tag = buildOpts.Tags[ti]
 		var manifests []string
-		for _, tagSuffix := range tagSuffixes {
-			manifests = append(manifests, fmt.Sprintf("%s-%s", tag, tagSuffix))
+		for tsi := range tagSuffixes {
+			manifests = append(manifests, fmt.Sprintf("%s-%s", tag, tagSuffixes[tsi]))
 		}
 
 		// docker manifest
