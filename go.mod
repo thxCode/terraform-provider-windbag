@@ -7,7 +7,7 @@ require (
 	github.com/Masterminds/sprig v2.22.0+incompatible
 	github.com/Microsoft/go-winio v0.4.16 // indirect
 	github.com/containerd/containerd v1.4.3 // indirect
-	github.com/docker/cli v20.10.2+incompatible
+	github.com/docker/cli v20.10.3+incompatible
 	github.com/docker/docker v20.10.2+incompatible
 	github.com/docker/go-metrics v0.0.1 // indirect
 	github.com/docker/libtrust v0.0.0-20160708172513-aabc10ec26b7 // indirect
@@ -26,5 +26,6 @@ require (
 	github.com/zclconf/go-cty v1.4.1 // indirect
 	golang.org/x/crypto v0.0.0-20201117144127-c1f2f97bffc9
 	golang.org/x/sync v0.0.0-20201020160332-67f06af15bc9
+	golang.org/x/sys v0.0.0-20210124154548-22da62e12c0c // indirect
 	gotest.tools/v3 v3.0.3 // indirect
 )
