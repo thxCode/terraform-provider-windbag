@@ -12,7 +12,7 @@ require (
 	github.com/docker/go-metrics v0.0.1 // indirect
 	github.com/docker/libtrust v0.0.0-20160708172513-aabc10ec26b7 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
-	github.com/hashicorp/terraform-plugin-sdk/v2 v2.4.2
+	github.com/hashicorp/terraform-plugin-sdk/v2 v2.5.0
 	github.com/huandu/xstrings v1.3.2 // indirect
 	github.com/json-iterator/go v1.1.10
 	github.com/mattn/go-colorable v0.1.7 // indirect
