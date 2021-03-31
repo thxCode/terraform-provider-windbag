@@ -160,6 +160,95 @@ function Test-Command
     return $false
 }
 
+function Add-MachineEnvironmentPath
+{
+    param (
+        [parameter(Mandatory=$true)] [string]$Path
+    )
+
+    # Verify that the $Path is not already in the $env:Path variable.
+    $pathForCompare = $Path.TrimEnd('\').ToLower()
+    foreach ($p in $env:Path.Split(";")) {
+        if ($p.TrimEnd('\').ToLower() -eq $pathForCompare) {
+            return
+        }
+    }
+
+    $newMachinePath = $Path + ";" + [System.Environment]::GetEnvironmentVariable("Path","Machine")
+    [Environment]::SetEnvironmentVariable("Path", $newMachinePath, [System.EnvironmentVariableTarget]::Machine)
+    $env:Path = $Path + ";" + $env:Path
+}
+
+function Execute-Binary
+{
+    param (
+        [parameter(Mandatory = $true)] [string]$FilePath,
+        [parameter(Mandatory = $false)] [string[]]$ArgumentList,
+        [parameter(Mandatory = $false)] [string]$Encoding="Ascii"
+    )
+
+    $stdout = New-TemporaryFile
+    $stderr = New-TemporaryFile
+    $stdoutContent = ""
+    $stderrContent = ""
+    try {
+        if ($ArgumentList) {
+            Start-Process -NoNewWindow -Wait -FilePath $FilePath -ArgumentList $ArgumentList -RedirectStandardOutput $stdout.FullName -RedirectStandardError $stderr.FullName -ErrorAction Ignore
+        } else {
+            Start-Process -NoNewWindow -Wait -FilePath $FilePath -RedirectStandardOutput $stdout.FullName -RedirectStandardError $stderr.FullName -ErrorAction Ignore
+        }
+        $stdoutContent = Get-Content -Path $stdout.FullName -Encoding $Encoding
+        $stderrContent = Get-Content -Path $stderr.FullName -Encoding $Encoding
+    } catch {
+        $stderrContent = $_.Exception.Message
+    }
+    $stdout.Delete()
+    $stderr.Delete()
+
+    $ret = ""
+    if (-not [string]::IsNullOrEmpty($stdoutContent)) {
+        $ret = $stdoutContent
+    }
+    if (-not [string]::IsNullOrEmpty($stderrContent)) {
+        if ([string]::IsNullOrEmpty($ret)) {
+            $ret = $stderrContent
+        } else {
+            $ret = $ret + "`n" + $stderrContent
+        }
+    }
+    return $ret
+}
+
+function Compare-Semver
+{
+    param (
+        [parameter(Mandatory = $true, ValueFromPipeline = $true)] [string]$Left,
+        [parameter(Mandatory = $true, ValueFromPipeline = $true)] [string]$Right
+    )
+
+    try {
+        $l = $Left -split "\."
+        $r = $Right -split "\."
+        $s = $l.Length
+        if ($s -gt $r.Length) {
+            $s = $r.Length
+        }
+        for ($i = 0; $i -lt $s; $i++) {
+            $li = [int]($l[$i])
+            $ri = [int]($r[$i])
+            if ($li -lt $ri) {
+                # Left < Right
+                return 1
+            }
+            if ($li -gt $ri) {
+                # Left > Right
+                return -1
+            }
+        }
+    } catch {}
+    return 0
+}
+
 $DOCKER_VERSION = Get-VarEnv -Key "DOCKER_VERSION"
 $DOCKER_DOWNLOAD_URI = Get-VarEnv -Key "DOCKER_DOWNLOAD_URI"
 
@@ -167,10 +256,18 @@ if ([string]::IsNullOrEmpty($DOCKER_VERSION)) {
     Log-Warn "Cannot verify Docker without version"
     exit 0
 }
+if (-not (Test-Command -Command "unpigz")) {
+    Invoke-WebRequest -UseBasicParsing -Uri "https://aliacs-k8s-cn-hongkong.oss-cn-hongkong.aliyuncs.com/public/pkg/windows/pigz/pigz-2.3.1.zip" -OutFile "${tmp}\pigz.zip"
+    Expand-Archive -Force -Path "${tmp}\pigz.zip" -DestinationPath "${env:ProgramFiles}\pigz"
+    Add-MachineEnvironmentPath -Path "${env:ProgramFiles}\pigz"
+    Add-MpPreference -ExclusionProcess "${env:ProgramFiles}\pigz\unpigz.exe" -ErrorAction Ignore
+    Restart-Service -Name "docker" -Force -ErrorAction Ignore
+}
 if (Test-Command -Command "dockerd") {
-    $dockerVersion = ""
-    try { $dockerVersion = "$(docker info --format '{{ json .ServerVersion }}' 2>&1)" } catch { }
-    if ("$dockerVersion" -like "`"${DOCKER_VERSION}*`"") {
+    $dockerVersionActual = $(Execute-Binary -FilePath "docker" -ArgumentList @("info"; "--format"; "`"{{ .ServerVersion }}`""))
+    $dockerVersionExpected = "${DOCKER_VERSION}"
+    # Expected <= Actual
+    if ((Compare-Semver -Left $dockerVersionExpected -Right $dockerVersionActual) -lt 0) {
         # start
         $service = Get-Service -Name "docker" -ErrorAction Ignore
         if (-not $service) {
@@ -183,10 +280,10 @@ if (Test-Command -Command "dockerd") {
         $service | Where-Object {$_.StartType -ne "Automatic"} | Set-Service -StartupType Automatic | Out-Null
         $service | Where-Object {$_.Status -ne "Running"} | Start-Service -ErrorAction Ignore -WarningAction Ignore | Out-Null
 
-        Log-Info "Found docker"
+        Log-Info "Found Docker, version ${dockerVersionActual}"
         exit 0
     }
-    Log-Warn "Found Docker, but the version is stale"
+    Log-Warn "Found Docker, but the version ${dockerVersionActual} is stale"
 }
 
 if ([string]::IsNullOrEmpty($DOCKER_DOWNLOAD_URI)) {
@@ -254,9 +351,7 @@ while ($removing) {
 Remove-Item "${env:TEMP}\docker.zip" -Force | Out-Null
 
 Log-Info "Refreshing the environment path with the Docker location ..."
-$path = "${env:ProgramFiles}\docker;$(Get-Env -Key "Path")"
-Set-Env -Key "Path" -Value $path
-$env:Path = $path
+Add-MachineEnvironmentPath -Path "${env:ProgramFiles}\docker"
 
 Log-Info "Registering the Docker to Windows Service ..."
 dockerd --register-service --experimental 2>&1 | Out-Null

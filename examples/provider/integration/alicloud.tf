@@ -34,10 +34,10 @@ variable "secret_key" {
 variable "host_image_list" {
   type = list(string)
   default = [
-    "win2019_1809_x64_dtc_en-us_40G_container_alibase_20201120.vhd",
+    "win2019_1809_x64_dtc_en-us_40G_container_alibase_20210316.vhd",
     "winsvr_64_dtcC_1903_en-us_40G_alibase_20191012.vhd",
     "wincore_1909_x64_dtc_en-us_40G_container_alibase_20200723.vhd",
-    "wincore_2004_x64_dtc_en-us_40G_container_alibase_20201217.vhd"
+    "wincore_2004_x64_dtc_en-us_40G_container_alibase_20210316.vhd"
   ]
 }
 

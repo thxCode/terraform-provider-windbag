@@ -3,7 +3,6 @@ package windbag
 import (
 	"context"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,6 +15,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
 	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/thxcode/terraform-provider-windbag/windbag/dial"
@@ -358,7 +358,6 @@ func resourceWindbagImageCreate(ctx context.Context, d *schema.ResourceData, met
 		construct context and retrieve information
 	*/
 
-	log.Printf("[INFO] Shipping build context %q\n", id)
 	for _, w := range workers {
 		var buildWorker = utils.ToStringInterfaceMap(w)
 		var workerAddress = utils.ToString(buildWorker["address"])
@@ -375,7 +374,7 @@ func resourceWindbagImageCreate(ctx context.Context, d *schema.ResourceData, met
 				}
 				defer func() {
 					if err := psc.Close(); err != nil {
-						log.Printf("[ERROR] Failed to close interaction: %v\n", err)
+						logrus.Errorf("Failed to close interaction: %v", err)
 					}
 				}()
 
@@ -448,7 +447,7 @@ New-Item -Force -ItemType Directory -Path "$Path/dockerfile" | Out-Null;
 				return nil
 			})
 			if err != nil {
-				return diag.Errorf("failed to create build context of worker %s: %v", workerAddress, err)
+				return diag.Errorf("failed to create build context on worker %s: %v", workerAddress, err)
 			}
 			buildWorker["build_context"].(*schema.Set).Add(info)
 		}
@@ -463,7 +462,7 @@ New-Item -Force -ItemType Directory -Path "$Path/dockerfile" | Out-Null;
 				}
 				defer func() {
 					if err := psc.Close(); err != nil {
-						log.Printf("[ERROR] Failed to close interaction: %v\n", err)
+						logrus.Errorf("Failed to close interaction: %v", err)
 					}
 				}()
 
@@ -510,12 +509,12 @@ New-Item -Force -ItemType Directory -Path "$Path/dockerfile" | Out-Null;
 				return nil
 			})
 			if err != nil {
-				return diag.Errorf("failed to retrieve information of worker %s: %v", workerAddress, err)
+				return diag.Errorf("failed to retrieve information on worker %s: %v", workerAddress, err)
 			}
 			buildWorker["build_information"].(*schema.Set).Add(info)
 		}
 	}
-	log.Printf("[INFO] Shipped build context %q\n", id)
+	logrus.Debugf("Shipped build context %q to all workers", id)
 
 	/*
 		login registries
@@ -549,21 +548,22 @@ New-Item -Force -ItemType Directory -Path "$Path/dockerfile" | Out-Null;
 					}
 					defer func() {
 						if err := psc.Close(); err != nil {
-							log.Printf("[ERROR] Failed to close interaction: %v\n", err)
+							logrus.Errorf("Failed to close interaction: %v", err)
 						}
 					}()
 
 					for reg := range registryLoginCommands {
-						log.Printf("[DEBUG] Logining registry %q on worker %q\n", reg, workerAddress)
 						var err = resource.RetryContext(egctx, workerLoginTimeout, func() *resource.RetryError {
 							var command = registryLoginCommands[reg]
 							var stdout, stderr, err = psc.Execute(ctx, workerID, command)
 							if err != nil {
-								return resource.RetryableError(errors.Wrapf(err, "failed to login registry %s", reg))
+								logrus.Errorf("Failed to login registry %q on worker %q", reg, workerAddress)
+								return resource.RetryableError(errors.Wrapf(err, "failed to log registry %s", reg))
 							}
 							if stderr != "" {
 								if !strings.HasPrefix(stdout, "Login Succeeded") {
-									return resource.RetryableError(errors.Errorf("error loging registry %s: %s", reg, stderr))
+									logrus.Errorf("Failed to login registry %q on worker %q", reg, workerAddress)
+									return resource.RetryableError(errors.Errorf("failed to login registry %s: %v", reg, stderr))
 								}
 							}
 							return nil
@@ -571,7 +571,7 @@ New-Item -Force -ItemType Directory -Path "$Path/dockerfile" | Out-Null;
 						if err != nil {
 							return err
 						}
-						log.Printf("[INFO] Logon registry %q on worker %q\n", reg, workerAddress)
+						logrus.Debugf("Logon registry %q on worker %q\n", reg, workerAddress)
 					}
 					return nil
 				})
@@ -617,7 +617,6 @@ func resourceWindbagImageRead(ctx context.Context, d *schema.ResourceData, meta 
 		build
 	*/
 
-	log.Printf("[INFO] Building image %q\n", id)
 	var buildOpts = types.ImageBuildOptions{
 		Version:     types.BuilderV1,
 		Tags:        utils.ToStringSlice(d.Get("tag")),
@@ -643,7 +642,6 @@ func resourceWindbagImageRead(ctx context.Context, d *schema.ResourceData, meta 
 
 		// docker build
 		eg.Go(func() error {
-			log.Printf("[INFO] Building image %q on worker %q\n", id, workerAddress)
 			var workerDialer = workerDialers[workerAddress]
 			var err = workerDialer.PowerShell(egctx, nil, func(ctx context.Context, ps *powershell.PowerShell) error {
 				var psc, err = ps.Commands()
@@ -652,7 +650,7 @@ func resourceWindbagImageRead(ctx context.Context, d *schema.ResourceData, meta 
 				}
 				defer func() {
 					if err := psc.Close(); err != nil {
-						log.Printf("[ERROR] Failed to close interaction: %v\n", err)
+						logrus.Errorf("Failed to close interaction: %v", err)
 					}
 				}()
 
@@ -699,26 +697,25 @@ func resourceWindbagImageRead(ctx context.Context, d *schema.ResourceData, meta 
 			if err != nil {
 				return errors.Wrapf(err, "error executing docker-build command on worker %s", workerAddress)
 			}
-			log.Printf("[INFO] Built image %q on worker %q\n", id, workerAddress)
+			logrus.Debugf("Built image %q on worker %q", id, workerAddress)
 			return nil
 		})
 	}
 	if err := eg.Wait(); err != nil {
 		return diag.Errorf("failed to build image %s: %v", id, err)
 	}
-	log.Printf("[INFO] Built image %q\n", id)
+	logrus.Infof("Built image %q", id)
 
 	/*
 		push
 	*/
 
 	if !utils.ToBool(d.Get("push")) {
-		log.Printf("[WARN] Skipped to push the image %q", id)
+		logrus.Warnf(" Skipped to push the image %q", id)
 		return nil
 	}
 	var workerPushTimeout = utils.ToDuration(d.Get("push_timeout"), 15*time.Minute)
 
-	log.Printf("[INFO] Pushing image %q\n", id)
 	eg, egctx = errgroup.WithContext(ctx)
 	for _, w := range workers {
 		var pushWorker = utils.ToStringInterfaceMap(w)
@@ -727,7 +724,6 @@ func resourceWindbagImageRead(ctx context.Context, d *schema.ResourceData, meta 
 
 		// docker push
 		eg.Go(func() error {
-			log.Printf("[INFO] Pushing image %q on worker %q\n", id, workerAddress)
 			var workerDialer = workerDialers[workerAddress]
 			var err = workerDialer.PowerShell(egctx, nil, func(ctx context.Context, ps *powershell.PowerShell) error {
 				var psc, err = ps.Commands()
@@ -736,7 +732,7 @@ func resourceWindbagImageRead(ctx context.Context, d *schema.ResourceData, meta 
 				}
 				defer func() {
 					if err := psc.Close(); err != nil {
-						log.Printf("[ERROR] Failed to close interaction: %v\n", err)
+						logrus.Errorf("Failed to close interaction: %v", err)
 					}
 				}()
 
@@ -749,39 +745,37 @@ func resourceWindbagImageRead(ctx context.Context, d *schema.ResourceData, meta 
 				for ti := range buildOpts.Tags {
 					var tag = buildOpts.Tags[ti]
 					tag = fmt.Sprintf("%s-%s", tag, workerTagSuffix)
-					log.Printf("[DEBUG] Pushing tag %q on worker %q\n", tag, workerAddress)
 					err = resource.RetryContext(egctx, workerPushTimeout, func() *resource.RetryError {
 						var command = docker.ConstructImagePushCommand(tag)
 						_, stderr, err := psc.Execute(ctx, workerID, command)
 						if err != nil {
-							return resource.RetryableError(errors.Wrapf(err, "failed to push tag %s", tag))
+							logrus.Errorf("Failed to push image %q on worker %s: %v", tag, workerAddress, err)
+							return resource.RetryableError(errors.Wrapf(err, "failed to push image %s", tag))
 						}
 						if stderr != "" {
-							return resource.RetryableError(errors.Errorf("error pushing tag %s: %s", tag, stderr))
+							logrus.Errorf("Failed to push image %q on worker %s: %v", tag, workerAddress, stderr)
+							return resource.RetryableError(errors.Errorf("failed to push image %s: %v", tag, stderr))
 						}
 						return nil
 					})
 					if err != nil {
 						return err
 					}
-					log.Printf("[DEBUG] Pushed tag %q on worker %q\n", tag, workerAddress)
 				}
 				return nil
 			})
 			if err != nil {
-				log.Printf("[ERROR] Failed to push image %q on worker %q\n", id, workerAddress)
-				return errors.Wrapf(err, "error executing docker-push command on worker %s", workerAddress)
+				return errors.Wrapf(err, "error executing docker-push command of image %s on worker %s", id, workerAddress)
 			}
-			log.Printf("[INFO] Pushed image %q on worker %q\n", id, workerAddress)
+			logrus.Debugf("Pushed image %q on worker %q", id, workerAddress)
 			return nil
 		})
 	}
 	if err := eg.Wait(); err != nil {
 		return diag.Errorf("failed to push image %s: %v", id, err)
 	}
-	log.Printf("[INFO] Pushed image %q\n", id)
+	logrus.Infof("Pushed image %q", id)
 
-	log.Printf("[INFO] Manifesting image %q\n", id)
 	var manifestWorker, tagSuffixes = func() (manifestWorker map[string]interface{}, tagSuffixes []string) {
 		var manifestWorkerBuild int
 		for _, w := range workers {
@@ -814,7 +808,7 @@ func resourceWindbagImageRead(ctx context.Context, d *schema.ResourceData, meta 
 
 		// docker manifest
 		eg.Go(func() error {
-			log.Printf("[INFO] Manifesting image %q on worker %q\n", id, workerAddress)
+			logrus.Infof("Manifesting image %q on worker %q", id, workerAddress)
 			var workerDialer = workerDialers[workerAddress]
 			var err = resource.RetryContext(egctx, workerPushTimeout, func() *resource.RetryError {
 				var err = workerDialer.PowerShell(egctx, nil, func(ctx context.Context, ps *powershell.PowerShell) error {
@@ -824,7 +818,7 @@ func resourceWindbagImageRead(ctx context.Context, d *schema.ResourceData, meta 
 					}
 					defer func() {
 						if err := psc.Close(); err != nil {
-							log.Printf("[ERROR] Failed to close interaction: %v\n", err)
+							logrus.Errorf("Failed to close interaction: %v", err)
 						}
 					}()
 
@@ -851,22 +845,22 @@ func resourceWindbagImageRead(ctx context.Context, d *schema.ResourceData, meta 
 					return nil
 				})
 				if err != nil {
-					return resource.RetryableError(errors.Wrapf(err, "error executing docker-manifest command on worker %s", workerAddress))
+					logrus.Errorf("Failed to execute the docker-manifest on worker %q: %v", workerAddress, err)
+					return resource.RetryableError(errors.Wrapf(err, "failed to execute docker manifest on worker %s", workerAddress))
 				}
 				return nil
 			})
 			if err != nil {
-				log.Printf("[ERROR] Failed to manifest image %q on worker %q\n", id, workerAddress)
 				return errors.Wrapf(err, "error executing docker-manifest command on worker %s", workerAddress)
 			}
-			log.Printf("[INFO] Manifested image %q on worker %q\n", id, workerAddress)
+			logrus.Debugf("Manifested image %q on worker %q", id, workerAddress)
 			return nil
 		})
 	}
 	if err := eg.Wait(); err != nil {
 		return diag.Errorf("failed to manifest image %s: %v", id, err)
 	}
-	log.Printf("[INFO] Manifested image %q\n", id)
+	logrus.Infof("Manifested image %q", id)
 
 	return nil
 }
@@ -919,7 +913,6 @@ func (p *provider) dialWorkerBySSH(ctx context.Context, address string, ssh map[
 	}
 	opts.WithAgent = utils.ToBool(ssh["with_agent"])
 
-	log.Printf("[DEBUG] Dialing worker %q via SSH\n", address)
 	var dockerBuild = p.docker
 	err = resource.RetryContext(ctx, utils.ToDuration(ssh["retry_timeout"], 10*time.Minute), func() (rerr *resource.RetryError) {
 		var err error
@@ -927,12 +920,12 @@ func (p *provider) dialWorkerBySSH(ctx context.Context, address string, ssh map[
 		// dail
 		w, err = dial.SSH(opts)
 		if err != nil {
+			logrus.Errorf("Failed to dail worker %q: %v", address, err)
 			return resource.RetryableError(err)
 		}
 		defer func() {
 			if rerr != nil && w != nil {
 				_ = w.Close()
-				log.Printf("[DEBUG] Closed SSH dialer of worker %q as a retry error\n", address)
 			}
 		}()
 
@@ -945,7 +938,7 @@ func (p *provider) dialWorkerBySSH(ctx context.Context, address string, ssh map[
 				}
 				defer func() {
 					if err := psc.Close(); err != nil {
-						log.Printf("[ERROR] Failed to close interaction: %v\n", err)
+						logrus.Errorf("Failed to close interaction: %v", err)
 					}
 				}()
 
@@ -968,14 +961,15 @@ Invoke-WebRequest -UseBasicParsing -Uri https://raw.githubusercontent.com/thxCod
 				return nil
 			})
 			if err != nil {
-				return resource.RetryableError(errors.Wrap(err, "failed to verify the docker version"))
+				logrus.Errorf("Failed to execute docker-version on worker %q: %v", address, err)
+				return resource.RetryableError(errors.Wrapf(err, "failed to verify docker version on worker %s", address))
 			}
 
 			// NB(thxCode): there is not robust solution to confirm that
 			// a fresh host has been installed the docker server and restarted,
 			// so we paused for 10 seconds and then dail again.
 			time.Sleep(10 * time.Second)
-			dockerBuild = nil
+			dockerBuild = nil // to skip the docker version verification
 			return resource.RetryableError(errors.New("retry again"))
 		}
 
@@ -988,11 +982,11 @@ Invoke-WebRequest -UseBasicParsing -Uri https://raw.githubusercontent.com/thxCod
 				}
 				defer func() {
 					if err := psc.Close(); err != nil {
-						log.Printf("[ERROR] Failed to close interaction: %v\n", err)
+						logrus.Errorf("Failed to close interaction: %v", err)
 					}
 				}()
 
-				var command = `docker info --format '{{ json .ServerVersion }}';`
+				var command = `docker info --format '{{ .ServerVersion }}';`
 				_, stderr, err := psc.Execute(ctx, address, command)
 				if err != nil {
 					return errors.Wrap(err, "failed to confirm the state of docker server")
@@ -1004,8 +998,9 @@ Invoke-WebRequest -UseBasicParsing -Uri https://raw.githubusercontent.com/thxCod
 				return nil
 			})
 			if err != nil {
+				logrus.Errorf("Failed to get docker info on worker %q: %v", address, err)
 				time.Sleep(10 * time.Second)
-				return resource.RetryableError(errors.Wrap(err, "the docker server is not ready"))
+				return resource.RetryableError(errors.Wrapf(err, "failed to get docker info on worker %s", address))
 			}
 		}
 
@@ -1014,7 +1009,7 @@ Invoke-WebRequest -UseBasicParsing -Uri https://raw.githubusercontent.com/thxCod
 	if err != nil {
 		return nil, err
 	}
-	log.Printf("[DEBUG] Dialed worker %q via SSH\n", address)
+	logrus.Infof("Dialed worker %q via SSH", address)
 
 	return w, nil
 }

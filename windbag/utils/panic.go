@@ -1,9 +1,10 @@
 package utils
 
 import (
-	"log"
 	"net/http"
 	"runtime"
+
+	"github.com/sirupsen/logrus"
 )
 
 // HandleCrash handles the crash with a default log handler.
@@ -41,8 +42,8 @@ func logPanic(r interface{}) {
 	stacktrace := make([]byte, size)
 	stacktrace = stacktrace[:runtime.Stack(stacktrace, false)]
 	if _, ok := r.(string); ok {
-		log.Printf("[ERROR] Observed a panic: %s\n%s", r, stacktrace)
+		logrus.Errorf("Observed a panic: %s\n%s", r, stacktrace)
 	} else {
-		log.Printf("[ERROR] Observed a panic: %#v (%v)\n%s", r, r, stacktrace)
+		logrus.Errorf("Observed a panic: %#v (%v)\n%s", r, r, stacktrace)
 	}
 }
