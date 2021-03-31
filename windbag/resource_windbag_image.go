@@ -293,6 +293,12 @@ func resourceWindbagImage() *schema.Resource {
 }
 
 func resourceWindbagImageCreate(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
+	var id = func() string {
+		var tags = utils.ToStringSlice(d.Get("tag"))
+		return resourceWindbagImageID(tags[len(tags)-1]) // use the last item as the resource ID
+	}()
+
+	log.Infof("==== %s dialing all workers ====", id)
 	var p = meta.(*provider)
 	var workers = utils.ToInterfaceSlice(d.Get("worker"))
 	var workerDialers = make(map[string]dial.Dialer, len(workers))
@@ -300,7 +306,7 @@ func resourceWindbagImageCreate(ctx context.Context, d *schema.ResourceData, met
 		var worker = utils.ToStringInterfaceMap(w)
 		var workerAddress = utils.ToString(worker["address"])
 		var workerSSH = utils.ToStringInterfaceMap(worker["ssh"])
-		var workerDialer, err = p.dialWorkerBySSH(ctx, workerAddress, workerSSH)
+		var workerDialer, err = p.dialWorkerBySSH(ctx, id, workerAddress, workerSSH)
 		if err != nil {
 			return diag.Errorf("failed to dial worker %s via SSH: %v", workerAddress, err)
 		}
@@ -311,11 +317,7 @@ func resourceWindbagImageCreate(ctx context.Context, d *schema.ResourceData, met
 			_ = workerDial.Close()
 		}
 	}()
-
-	var id = func() string {
-		var tags = utils.ToStringSlice(d.Get("tag"))
-		return resourceWindbagImageID(tags[len(tags)-1]) // use the last item as the resource ID
-	}()
+	log.Infof("==== %s dialed all workers ====", id)
 
 	var buildpath, err = func(p string) (dPath string, dErr error) {
 		dPath, dErr = utils.NormalizePath(p)
@@ -358,6 +360,7 @@ func resourceWindbagImageCreate(ctx context.Context, d *schema.ResourceData, met
 		construct context and retrieve information
 	*/
 
+	log.Infof("==== %s shipping build context to all workers ====", id)
 	for _, w := range workers {
 		var buildWorker = utils.ToStringInterfaceMap(w)
 		var workerAddress = utils.ToString(buildWorker["address"])
@@ -514,12 +517,13 @@ New-Item -Force -ItemType Directory -Path "$Path/dockerfile" | Out-Null;
 			buildWorker["build_information"].(*schema.Set).Add(info)
 		}
 	}
-	log.Debugf("Shipped build context %q to all workers", id)
+	log.Infof("==== %s shipped build context to all workers ====", id)
 
 	/*
 		login registries
 	*/
 
+	log.Infof("==== %s logging all registries on all workers ====", id)
 	var registryLoginCommands = make(map[string]string)
 	for _, r := range utils.ToInterfaceSlice(d.Get("registry")) {
 		var reg = utils.ToStringInterfaceMap(r)
@@ -571,7 +575,7 @@ New-Item -Force -ItemType Directory -Path "$Path/dockerfile" | Out-Null;
 						if err != nil {
 							return err
 						}
-						log.Debugf("Logon registry %q on worker %q\n", reg, workerAddress)
+						log.Infof("Logon registry %q on worker %q\n", reg, workerAddress)
 					}
 					return nil
 				})
@@ -586,6 +590,7 @@ New-Item -Force -ItemType Directory -Path "$Path/dockerfile" | Out-Null;
 			return diag.Errorf("failed to login registry for image %s: %v", id, err)
 		}
 	}
+	log.Infof("==== %s logon all registries on all workers ====", id)
 
 	d.SetId(id)
 	return resourceWindbagImageRead(ctx, d, meta)
@@ -595,13 +600,14 @@ func resourceWindbagImageRead(ctx context.Context, d *schema.ResourceData, meta 
 	var p = meta.(*provider)
 	var id = d.Id()
 
+	log.Infof("==== %s dialing all workers ====", id)
 	var workers = utils.ToInterfaceSlice(d.Get("worker"))
 	var workerDialers = make(map[string]dial.Dialer, len(workers))
 	for _, w := range workers {
 		var worker = utils.ToStringInterfaceMap(w)
 		var workerAddress = utils.ToString(worker["address"])
 		var workerSSH = utils.ToStringInterfaceMap(worker["ssh"])
-		var workerDialer, err = p.dialWorkerBySSH(ctx, workerAddress, workerSSH)
+		var workerDialer, err = p.dialWorkerBySSH(ctx, id, workerAddress, workerSSH)
 		if err != nil {
 			return diag.Errorf("failed to dial worker %s via SSH: %v", workerAddress, err)
 		}
@@ -612,11 +618,13 @@ func resourceWindbagImageRead(ctx context.Context, d *schema.ResourceData, meta 
 			_ = workerDial.Close()
 		}
 	}()
+	log.Infof("==== %s dialed all workers ====", id)
 
 	/*
 		build
 	*/
 
+	log.Infof("==== %s building on all workers ====", id)
 	var buildOpts = types.ImageBuildOptions{
 		Version:     types.BuilderV1,
 		Tags:        utils.ToStringSlice(d.Get("tag")),
@@ -642,6 +650,7 @@ func resourceWindbagImageRead(ctx context.Context, d *schema.ResourceData, meta 
 
 		// docker build
 		eg.Go(func() error {
+			log.Infof("Building image %q on worker %q", id, workerAddress)
 			var workerDialer = workerDialers[workerAddress]
 			var err = workerDialer.PowerShell(egctx, nil, func(ctx context.Context, ps *powershell.PowerShell) error {
 				var psc, err = ps.Commands()
@@ -697,19 +706,20 @@ func resourceWindbagImageRead(ctx context.Context, d *schema.ResourceData, meta 
 			if err != nil {
 				return errors.Wrapf(err, "error executing docker-build command on worker %s", workerAddress)
 			}
-			log.Debugf("Built image %q on worker %q", id, workerAddress)
+			log.Infof("Built image %q on worker %q", id, workerAddress)
 			return nil
 		})
 	}
 	if err := eg.Wait(); err != nil {
 		return diag.Errorf("failed to build image %s: %v", id, err)
 	}
-	log.Infof("Built image %q", id)
+	log.Infof("==== %s built on all workers ====", id)
 
 	/*
 		push
 	*/
 
+	log.Infof("==== %s pushing on all workers ====", id)
 	if !utils.ToBool(d.Get("push")) {
 		log.Warnf(" Skipped to push the image %q", id)
 		return nil
@@ -767,15 +777,16 @@ func resourceWindbagImageRead(ctx context.Context, d *schema.ResourceData, meta 
 			if err != nil {
 				return errors.Wrapf(err, "error executing docker-push command of image %s on worker %s", id, workerAddress)
 			}
-			log.Debugf("Pushed image %q on worker %q", id, workerAddress)
+			log.Infof("Pushed image %q on worker %q", id, workerAddress)
 			return nil
 		})
 	}
 	if err := eg.Wait(); err != nil {
 		return diag.Errorf("failed to push image %s: %v", id, err)
 	}
-	log.Infof("Pushed image %q", id)
+	log.Infof("==== %s pushed on all workers ====", id)
 
+	log.Infof("==== %s manifesting on the highest worker ====", id)
 	var manifestWorker, tagSuffixes = func() (manifestWorker map[string]interface{}, tagSuffixes []string) {
 		var manifestWorkerBuild int
 		for _, w := range workers {
@@ -853,14 +864,14 @@ func resourceWindbagImageRead(ctx context.Context, d *schema.ResourceData, meta 
 			if err != nil {
 				return errors.Wrapf(err, "error executing docker-manifest command on worker %s", workerAddress)
 			}
-			log.Debugf("Manifested image %q on worker %q", id, workerAddress)
+			log.Infof("Manifested image %q on worker %q", id, workerAddress)
 			return nil
 		})
 	}
 	if err := eg.Wait(); err != nil {
 		return diag.Errorf("failed to manifest image %s: %v", id, err)
 	}
-	log.Infof("Manifested image %q", id)
+	log.Infof("==== %s manifested on the highest worker ====", id)
 
 	return nil
 }
@@ -900,7 +911,7 @@ func validationWindbagImageWorkerAddress(i interface{}, k string) (warnings []st
 	return warnings, errors
 }
 
-func (p *provider) dialWorkerBySSH(ctx context.Context, address string, ssh map[string]interface{}) (w dial.Dialer, err error) {
+func (p *provider) dialWorkerBySSH(ctx context.Context, id string, address string, ssh map[string]interface{}) (w dial.Dialer, err error) {
 	var opts dial.SSHOptions
 	opts.Address = address
 	opts.Username = utils.ToString(ssh["username"])
@@ -1009,7 +1020,7 @@ Invoke-WebRequest -UseBasicParsing -Uri https://raw.githubusercontent.com/thxCod
 	if err != nil {
 		return nil, err
 	}
-	log.Infof("Dialed worker %q via SSH", address)
+	log.Infof("%s dialed worker %q via SSH", id, address)
 
 	return w, nil
 }

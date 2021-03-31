@@ -99,7 +99,7 @@ func (ps *PowerShell) ExecuteScript(ctx context.Context, id string, stdout, stde
 	if len(scriptPath) == 0 {
 		return errors.New("can't exec blank script")
 	}
-	log.Infof("[PowerShell -(%s)- Stdin]: %s, %v", id, scriptPath, scriptArgs)
+	log.Tracef("[PowerShell -(%s)- Stdin]: %s, %v", id, scriptPath, scriptArgs)
 
 	if ps.executed {
 		return errors.New("cannot re-execute the powershell")
@@ -191,7 +191,7 @@ func (ps *PowerShell) ExecuteCommand(ctx context.Context, id string, stdout, std
 	if len(command) == 0 {
 		return errors.New("can't exec blank command")
 	}
-	log.Infof("[PowerShell -(%s)- Stdin]: %s", id, command)
+	log.Tracef("[PowerShell -(%s)- Stdin]: %s", id, command)
 	command = fmt.Sprintf(`"& { $ErrorActionPreference='Stop'; $ProgressPreference='SilentlyContinue'; %s}"`, command)
 
 	if ps.executed {
@@ -325,7 +325,7 @@ func (psc *Commands) Execute(ctx context.Context, id string, command string) (st
 	if len(command) == 0 {
 		return "", "", errors.New("could not execute blank cmd")
 	}
-	log.Infof("[PowerShell -(%s)- Stdin]: %s", id, command)
+	log.Tracef("[PowerShell -(%s)- Stdin]: %s", id, command)
 	command = strings.Replace(command, "\n", " ", -1) // narrow the command into one line
 
 	var commandSignal = newCommandSignal()

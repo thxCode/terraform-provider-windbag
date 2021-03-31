@@ -24,39 +24,43 @@ type logger struct {
 
 func (lg *logger) Traceln(message string) {
 	if lg.v <= lTrace {
-		lg.Println("\n\t[TRACE] ", message)
+		lg.Println("[TRACE] " + message)
 	}
 }
 
 func (lg *logger) Debugln(message string) {
 	if lg.v <= lDebug {
-		lg.Println("\n\t[DEBUG] ", message)
+		lg.Println("[DEBUG] " + message)
 	}
 }
 
 func (lg *logger) Infoln(message string) {
 	if lg.v <= lInfo {
-		lg.Println("\n\t[INFO] ", message)
+		lg.Println("[INFO] " + message)
 	}
 }
 
 func (lg *logger) Warnln(message string) {
 	if lg.v <= lWarn {
-		lg.Println("\n\t[WARN] ", message)
+		lg.Println("[WARN] " + message)
 	}
 }
 
 func (lg *logger) Errorln(message string) {
 	if lg.v <= lError {
-		lg.Println("\n\t[ERROR] ", message)
+		lg.Println("[ERROR] " + message)
 	}
 }
 
 func (lg *logger) Fatalln(message string) {
 	if lg.v <= lFatal {
-		lg.Println("\n\t[FATAL] ", message)
+		lg.Println("[FATAL] " + message)
 		os.Exit(1)
 	}
+}
+
+func (lg *logger) Printf(format string, args ...string) {
+	lg.l.Printf(format, args)
 }
 
 func (lg *logger) Println(message ...string) {
@@ -66,6 +70,11 @@ func (lg *logger) Println(message ...string) {
 var l *logger
 
 func init() {
+	// configure default logger
+	log.SetFlags(0)
+	log.SetPrefix("[sdk] ")
+
+	// configure system logger
 	var v int
 	switch strings.ToLower(os.Getenv("WINDBAG_LOG")) {
 	case "fatal":
@@ -82,7 +91,7 @@ func init() {
 		v = lInfo
 	}
 	l = &logger{
-		l: log.New(os.Stderr, "", 0),
+		l: log.New(os.Stderr, "[plg] ", 0),
 		v: v,
 	}
 }
