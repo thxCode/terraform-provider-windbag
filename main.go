@@ -4,15 +4,11 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"log"
-	"os"
 
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/logging"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/plugin"
-	"github.com/sirupsen/logrus"
 
 	"github.com/thxcode/terraform-provider-windbag/windbag"
-	"github.com/thxcode/terraform-provider-windbag/windbag/format"
+	"github.com/thxcode/terraform-provider-windbag/windbag/log"
 )
 
 var (
@@ -22,36 +18,6 @@ var (
 	// commit specifies the commit of windbag provider.
 	commit = "000000"
 )
-
-func init() {
-	logrus.SetOutput(os.Stderr)
-	logrus.SetLevel(getLogLevel())
-	logrus.SetFormatter(getLogFormatter())
-}
-
-func getLogFormatter() logrus.Formatter {
-	return &format.SimpleTextFormatter{
-		DisableTimestamp:       true,
-		DisableSorting:         true,
-		DisableLevelTruncation: true,
-		QuoteEmptyFields:       true,
-	}
-}
-
-func getLogLevel() logrus.Level {
-	var env = os.Getenv("WINDBAG_LOG")
-	if env == "" {
-		env = os.Getenv(logging.EnvLog)
-	}
-	if env == "" {
-		env = "info"
-	}
-	var level, err = logrus.ParseLevel(env)
-	if err != nil {
-		level = logrus.InfoLevel
-	}
-	return level
-}
 
 func main() {
 	var debugMode bool

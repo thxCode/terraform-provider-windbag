@@ -10,12 +10,12 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/pkg/sftp"
-	"github.com/sirupsen/logrus"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/thxcode/terraform-provider-windbag/windbag/dial/powershell"
+	"github.com/thxcode/terraform-provider-windbag/windbag/log"
 	"github.com/thxcode/terraform-provider-windbag/windbag/pki"
 	"github.com/thxcode/terraform-provider-windbag/windbag/utils"
 )
@@ -98,18 +98,18 @@ func (d sshDialer) Close() error {
 
 func (d sshDialer) PowerShell(ctx context.Context, options *powershell.CreateOptions, interaction func(c context.Context, ps *powershell.PowerShell) error) error {
 	if interaction == nil {
-		logrus.Warnf("Skipped to interact with %s as the interaction is nil", d.addr)
+		log.Warnf("Skipped to interact with %s as the interaction is nil", d.addr)
 		return nil
 	}
 
 	var s, err = d.cli.NewSession()
 	if err != nil {
-		logrus.Errorf("Failed to create SSH session of %s: %v", d.addr, err)
+		log.Errorf("Failed to create SSH session of %s: %v", d.addr, err)
 		return err
 	}
 	defer func() {
 		if err = s.Close(); err != nil && err != io.EOF {
-			logrus.Warnf("Failed to close SSH session of %s: %v", d.addr, err)
+			log.Warnf("Failed to close SSH session of %s: %v", d.addr, err)
 		}
 	}()
 
@@ -136,7 +136,7 @@ func (d sshDialer) PowerShell(ctx context.Context, options *powershell.CreateOpt
 			if _, err := s.SendRequest("keepalive", true, nil); err != nil {
 				return err
 			}
-			logrus.Tracef("Ping SSH session of %s", d.addr)
+			log.Tracef("Ping SSH session of %s", d.addr)
 
 			if t == nil {
 				t = time.NewTicker(sshKeepaliveSliding)
@@ -203,7 +203,7 @@ func getSSHClientConfig(username, password string, keyPem, certPem []byte, withA
 			}
 
 			config.Auth = append(config.Auth, ssh.PublicKeysCallback(agent.NewClient(sshAgent).Signers))
-			logrus.Debugf("Using SSH_AUTH_SOCK: %s", sock)
+			log.Debugf("Using SSH_AUTH_SOCK: %s", sock)
 			return config, nil
 		}
 	}

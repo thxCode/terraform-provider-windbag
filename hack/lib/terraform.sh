@@ -4,10 +4,10 @@
 # Terraform variables helpers. These functions need the
 # following variables:
 #
-#            TERRAFORM_VERSION   -  The terraform version for running, default is v0.14.5.
+#            TERRAFORM_VERSION   -  The terraform version for running, default is v0.14.9.
 # TERRAFORM_PLUGIN_DOCS_VERSION  -  The terraform docs plugin for running, default is v0.3.1.
 
-terraform_version=${TERRAFORM_VERSION:-"v0.14.5"}
+terraform_version=${TERRAFORM_VERSION:-"v0.14.9"}
 terraform_plugin_docs_version=${TERRAFORM_PLUGIN_DOCS_VERSION:-"v0.3.1"}
 
 function cos::terraform::bin() {

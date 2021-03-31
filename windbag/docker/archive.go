@@ -14,7 +14,8 @@ import (
 	"github.com/docker/docker/pkg/system"
 	"github.com/mitchellh/go-homedir"
 	"github.com/pkg/errors"
-	"github.com/sirupsen/logrus"
+
+	"github.com/thxcode/terraform-provider-windbag/windbag/log"
 )
 
 // GetBuildpathArchive retrieves the context to build.
@@ -62,10 +63,10 @@ func ZipWithOptions(srcPath string, options *ZipOptions) (io.ReadCloser, error) 
 		defer func() {
 			// Make sure to check the error on Close.
 			if err := za.ZipWriter.Close(); err != nil {
-				logrus.Errorf("Cannot close zip writer: %v", err)
+				log.Errorf("Cannot close zip writer: %v", err)
 			}
 			if err := pipeWriter.Close(); err != nil {
-				logrus.Errorf("Cannot close pipe writer: %v", err)
+				log.Errorf("Cannot close pipe writer: %v", err)
 			}
 		}()
 
@@ -88,7 +89,7 @@ func ZipWithOptions(srcPath string, options *ZipOptions) (io.ReadCloser, error) 
 			// directory. So, we must split the source path and use the
 			// basename as the include.
 			if len(options.IncludeFiles) > 0 {
-				logrus.Warn("Zip: cannot archive a file with includes")
+				log.Warn("Zip: cannot archive a file with includes")
 			}
 
 			var dir, base = splitPathDirEntry(srcPath)
@@ -106,7 +107,7 @@ func ZipWithOptions(srcPath string, options *ZipOptions) (io.ReadCloser, error) 
 			var walkRoot = getWalkRoot(srcPath, include)
 			_ = filepath.Walk(walkRoot, func(filePath string, f os.FileInfo, err error) error {
 				if err != nil {
-					logrus.Errorf("Zip: Cannot stat file %s to zip: %v", srcPath, err)
+					log.Errorf("Zip: Cannot stat file %s to zip: %v", srcPath, err)
 					return nil
 				}
 
@@ -131,7 +132,7 @@ func ZipWithOptions(srcPath string, options *ZipOptions) (io.ReadCloser, error) 
 				if include != relFilePath {
 					skip, err = pm.Matches(relFilePath)
 					if err != nil {
-						logrus.Errorf("Error matching %s: %v", relFilePath, err)
+						log.Errorf("Error matching %s: %v", relFilePath, err)
 						return err
 					}
 				}
@@ -174,7 +175,7 @@ func ZipWithOptions(srcPath string, options *ZipOptions) (io.ReadCloser, error) 
 				seen[relFilePath] = struct{}{}
 
 				if err := za.addZipFile(filePath, relFilePath); err != nil {
-					logrus.Errorf("Cannot add file %s to zip: %v", filePath, err)
+					log.Errorf("Cannot add file %s to zip: %v", filePath, err)
 					// if pipe is broken, stop writing zip stream to it
 					if err == io.ErrClosedPipe {
 						return err

@@ -12,7 +12,7 @@ ARG TARGETOS
 ARG TARGETARCH
 
 # install terraform client
-ENV TERRAFORM_VERSION=0.14.5
+ENV TERRAFORM_VERSION=0.14.9
 RUN curl -fL "https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_${TARGETOS}_${TARGETARCH}.zip" -o "/tmp/terraform.zip" \
     && unzip -o "/tmp/terraform.zip" -d "/tmp" && chmod a+x "/tmp/terraform" \
     && mv -f "/tmp/terraform" /usr/bin/ \
@@ -23,10 +23,11 @@ RUN curl -fL "https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terr
 ENV TF_PLUGIN_CACHE_DIR="/root/.terraform.d/plugin-cache" \
     TF_RELEASE=1 \
     TF_DEV=true \
-    TF_LOG=INFO
+    TF_LOG=INFO \
+    WINDBAG_LOG = INFO
 
 # install alicloud provider
-ENV TERRAFORM_ALICLOUD_VERSION=1.113.0
+ENV TERRAFORM_ALICLOUD_VERSION=1.119.1
 RUN CACHE_DIR="${TF_PLUGIN_CACHE_DIR}/registry.terraform.io/aliyun/alicloud/${TERRAFORM_ALICLOUD_VERSION}/${TARGETOS}_${TARGETARCH}"; \
     mkdir -p "${CACHE_DIR}"; \
     \
