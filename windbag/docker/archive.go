@@ -89,7 +89,7 @@ func ZipWithOptions(srcPath string, options *ZipOptions) (io.ReadCloser, error) 
 			// directory. So, we must split the source path and use the
 			// basename as the include.
 			if len(options.IncludeFiles) > 0 {
-				log.Warn("Zip: cannot archive a file with includes")
+				log.Warnln("Zip: cannot archive a file with includes")
 			}
 
 			var dir, base = splitPathDirEntry(srcPath)
