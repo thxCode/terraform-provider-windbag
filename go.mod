@@ -22,7 +22,7 @@ require (
 	github.com/moby/term v0.0.0-20201216013528-df9cb8a40635 // indirect
 	github.com/pkg/errors v0.9.1
 	github.com/pkg/sftp v1.13.0
-	github.com/sirupsen/logrus v1.7.0
+	github.com/sirupsen/logrus v1.8.1
 	github.com/stretchr/testify v1.6.1
 	github.com/zclconf/go-cty v1.4.1 // indirect
 	golang.org/x/crypto v0.0.0-20201221181555-eec23a3978ad
