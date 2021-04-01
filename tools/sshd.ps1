@@ -145,6 +145,43 @@ function Log-Fatal
     throw "PANIC"
 }
 
+function Judge
+{
+    param(
+        [parameter(Mandatory = $true, ValueFromPipeline = $true)] [scriptBlock]$Block,
+        [parameter(Mandatory = $false)] [int]$Timeout = 30,
+        [parameter(Mandatory = $false)] [switch]$Reverse,
+        [parameter(Mandatory = $false)] [switch]$Throw,
+        [parameter(Mandatory = $false)] [string]$ErrorMessage = "Judge timeout"
+    )
+
+    $count = $Timeout
+    while ($count -gt 0) {
+        Start-Sleep -s 1
+
+        if (&$Block) {
+            if (-not $Reverse) {
+                Start-Sleep -s 5
+                break
+            }
+        } elseif ($Reverse) {
+            Start-Sleep -s 5
+            break
+        }
+
+        Start-Sleep -s 1
+        $count -= 1
+    }
+
+    if ($count -le 0) {
+        if ($Throw) {
+            throw "$ErrorMessage"
+        }
+
+        Log-Fatal "$ErrorMessage"
+    }
+}
+
 #
 # disable
 #
@@ -182,12 +219,15 @@ $SSH_USER_GROUP = Get-VarEnv -Key "SSH_USER_GROUP"
 
 $sshd = Get-Service -Name "sshd" -ErrorAction Ignore
 if (-not $sshd) {
-    try {
-        Get-WindowsCapability -Online -ErrorAction Stop | ? Name -like 'OpenSSH.Server*' | Add-WindowsCapability -Online -ErrorAction Stop | Out-Null
-    } catch {
-        Log-Fatal "Failed to enable sshd Windows Capability: $($_.Exception.Message)"
-    }
-    Start-Sleep -s 5
+    Log-Info "Installing sshd ..."
+    {
+        try {
+            Get-WindowsCapability -Online -ErrorAction Stop | ? Name -like 'OpenSSH.Server*' | Add-WindowsCapability -Online -ErrorAction Stop | Out-Null
+            return $true
+        } catch {
+            return $false
+        }
+    } | Judge -ErrorMessage "Failed to enable sshd Windows Capability" -Timeout 60
 }
 
 $sshd = Get-Service -Name "sshd" -ErrorAction Ignore
@@ -199,10 +239,14 @@ if ($sshd.StartupType -ne 'Automatic') {
 }
 if ($sshd.Status -ne 'Running') {
     Log-Info "Starting sshd ..."
-    Start-Service -Name "sshd" -ErrorAction Ignore
-    if (-not $?) {
-        Log-Fatal "Failed to start sshd service"
-    }
+    {
+        try {
+            Start-Service -Name "sshd" | Out-Null
+            return $true
+        } catch {
+            return $false
+        }
+    } | Judge -ErrorMessage "Failed to start sshd service" -Timeout 60
 }
 
 $sFirewall = Get-NetFirewallRule -Name *ssh*

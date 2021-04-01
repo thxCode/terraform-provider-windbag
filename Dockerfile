@@ -24,7 +24,7 @@ ENV TF_PLUGIN_CACHE_DIR="/root/.terraform.d/plugin-cache" \
     TF_RELEASE=1 \
     TF_DEV=true \
     TF_LOG=INFO \
-    WINDBAG_LOG = INFO
+    WINDBAG_LOG=INFO
 
 # install alicloud provider
 ENV TERRAFORM_ALICLOUD_VERSION=1.119.1
