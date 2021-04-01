@@ -267,7 +267,7 @@ if (Test-Command -Command "dockerd") {
     $dockerVersionActual = $(Execute-Binary -FilePath "docker" -ArgumentList @("info"; "--format"; "`"{{ .ServerVersion }}`""))
     $dockerVersionExpected = "${DOCKER_VERSION}"
     # Expected <= Actual
-    if ((Compare-Semver -Left $dockerVersionExpected -Right $dockerVersionActual) -lt 0) {
+    if ((Compare-Semver -Left $dockerVersionExpected -Right $dockerVersionActual) -ge 0) {
         # start
         $service = Get-Service -Name "docker" -ErrorAction Ignore
         if (-not $service) {
