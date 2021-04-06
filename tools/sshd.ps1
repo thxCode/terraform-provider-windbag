@@ -182,35 +182,12 @@ function Judge
     }
 }
 
-#
-# disable
-#
-
-if ($(Get-VarEnv -Key "SSHD_ENABLED" -DefaultValue "enabled") -ne "enabled") {
-    $sshd = Get-Service -Name "sshd" -ErrorAction Ignore
-    if ($sshd) {
-        if ($sshd.Status -eq 'Running') {
-            Log-Warn "Stopping sshd ..."
-            $sshd | Stop-Service -Force -ErrorAction Ignore | Out-Null
-        }
-
-        Log-Warn "Removing from Windows Service ..."
-        sc.exe delete sshd | Out-Null
-
-        Log-Warn "Shutting down firewall rule ..."
-        Remove-NetFirewallRule -Name 'OpenSSH-Server-In-TCP' -ErrorAction Ignore | Out-Null
-    }
-
-    Log-Warn "Removing from Windows Capability ..."
-    Get-WindowsCapability -Online -ErrorAction Ignore | ? Name -like 'OpenSSH.Server*' | Remove-WindowsCapability -Online -ErrorAction SilentlyContinue | Out-Null
-
-    Log-Info "Finished"
-    exit 0
+function Create-TemporaryDirectory
+{
+    $parent = [System.IO.Path]::GetTempPath()
+    [string] $name = [System.Guid]::NewGuid()
+    return New-Item -Force -ItemType Directory -Path (Join-Path $parent $name)
 }
-
-#
-# enable
-#
 
 $SSH_USER = Get-VarEnv -Key "SSH_USER"
 $SSH_USER_PASSWORD = Get-VarEnv -Key "SSH_USER_PASSWORD"
@@ -220,14 +197,16 @@ $SSH_USER_GROUP = Get-VarEnv -Key "SSH_USER_GROUP"
 $sshd = Get-Service -Name "sshd" -ErrorAction Ignore
 if (-not $sshd) {
     Log-Info "Installing sshd ..."
-    {
-        try {
-            Get-WindowsCapability -Online -ErrorAction Stop | ? Name -like 'OpenSSH.Server*' | Add-WindowsCapability -Online -ErrorAction Stop | Out-Null
-            return $true
-        } catch {
-            return $false
-        }
-    } | Judge -ErrorMessage "Failed to enable sshd Windows Capability" -Timeout 60
+    $tmp = $(Create-TemporaryDirectory | Select-Object -ExpandProperty FullName)
+    try {
+        Invoke-WebRequest -UseBasicParsing -Uri "https://github.com/PowerShell/Win32-OpenSSH/releases/download/v8.1.0.0p1-Beta/OpenSSH-Win64.zip" -OutFile "${tmp}\openssh.zip"
+        Expand-Archive -Force -Path "${tmp}\openssh.zip" -DestinationPath "${env:ProgramFiles}" | Out-Null
+        & "${env:ProgramFiles}\OpenSSH-Win64\install-sshd.ps1"
+    } catch {
+        Log-Error "Failed to install sshd as `"$($_.Exception.Message)`""
+    } finally {
+        Remove-Item -Force -Recurse -Path "$tmp" -ErrorAction Ignore | Out-Null
+    }
 }
 
 $sshd = Get-Service -Name "sshd" -ErrorAction Ignore
