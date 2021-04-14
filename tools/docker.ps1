@@ -257,8 +257,8 @@ if ([string]::IsNullOrEmpty($DOCKER_VERSION)) {
     exit 0
 }
 if (-not (Test-Command -Command "unpigz")) {
-    Invoke-WebRequest -UseBasicParsing -Uri "https://aliacs-k8s-cn-hongkong.oss-cn-hongkong.aliyuncs.com/public/pkg/windows/pigz/pigz-2.3.1.zip" -OutFile "${tmp}\pigz.zip"
-    Expand-Archive -Force -Path "${tmp}\pigz.zip" -DestinationPath "${env:ProgramFiles}\pigz"
+    Invoke-WebRequest -UseBasicParsing -Uri "https://aliacs-k8s-cn-hongkong.oss-cn-hongkong.aliyuncs.com/public/pkg/windows/pigz/pigz-v2.3.1.zip" -OutFile "${tmp}\pigz.zip"
+    Expand-Archive -Force -Path "${tmp}\pigz.zip" -DestinationPath "${env:ProgramFiles}"
     Add-MachineEnvironmentPath -Path "${env:ProgramFiles}\pigz"
     Add-MpPreference -ExclusionProcess "${env:ProgramFiles}\pigz\unpigz.exe" -ErrorAction Ignore
     Restart-Service -Name "docker" -Force -ErrorAction Ignore
