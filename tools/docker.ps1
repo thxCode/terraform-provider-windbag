@@ -249,13 +249,65 @@ function Compare-Semver
     return 0
 }
 
+function ConvertTo-Hashtable
+{
+  param (
+    [parameter(Mandatory = $true, ValueFromPipeline = $true)] [PSCustomObject]$InputObject
+  )
+
+  if ($InputObject -is [array]) {
+    foreach ($item in $value) {
+      $item | ConvertTo-Hashtable
+    }
+  }
+
+  if ($InputObject -is [hashtable] -or $InputObject -is [System.Collections.Specialized.OrderedDictionary]) {
+    return $InputObject
+  }
+
+  $hash = [ordered]@{}
+  if ($InputObject -is [System.Management.Automation.PSCustomObject]) {
+    foreach ($prop in $InputObject.psobject.Properties) {
+      $name = $prop.Name
+      $value = $prop.Value
+
+      if ($value -is [System.Management.Automation.PSCustomObject]) {
+        $value = $value | ConvertTo-Hashtable
+      }
+
+      if ($value -is [array]) {
+        $hashValue = @()
+        if ($value[0] -is [hashtable] -or $value[0] -is [System.Collections.Specialized.OrderedDictionary] -or $value[0] -is [PSCustomObject]) {
+          foreach ($item in $value) {
+              $hashValue += ($item | ConvertTo-Hashtable)
+          }
+        } else {
+          $hashValue = $value
+        }
+        $value = $hashValue
+      }
+      $hash.Add($name,$value)
+    }
+  }
+  return $hash
+}
+
 $DOCKER_VERSION = Get-VarEnv -Key "DOCKER_VERSION"
 $DOCKER_DOWNLOAD_URI = Get-VarEnv -Key "DOCKER_DOWNLOAD_URI"
+$DOCKER_CONFIGURATION_ALLOW_NONDISTRIBUTABLE_ARTIFACT = Get-VarEnv -Key "$DOCKER_CONFIGURATION_ALLOW_NONDISTRIBUTABLE_ARTIFACT"
+$DOCKER_CONFIGURATION_EXPERIMENTAL = Get-VarEnv -Key "DOCKER_CONFIGURATION_EXPERIMENTAL" -DefaultValue "true"
+$DOCKER_CONFIGURATION_MAX_CONCURRENT_DOWNLOADS = Get-VarEnv -Key "DOCKER_CONFIGURATION_MAX_CONCURRENT_DOWNLOADS" -DefaultValue "8"
+$DOCKER_CONFIGURATION_MAX_CONCURRENT_UPLOADS = Get-VarEnv -Key "DOCKER_CONFIGURATION_MAX_CONCURRENT_UPLOADS" -DefaultValue "8"
+$DOCKER_CONFIGURATION_MAX_DOWNLOAD_ATTEMPTS = Get-VarEnv -Key "DOCKER_CONFIGURATION_MAX_DOWNLOAD_ATTEMPTS" -DefaultValue "10"
+$DOCKER_CONFIGURATION_REGISTRY_MIRRORS = Get-VarEnv -Key "DOCKER_CONFIGURATION_REGISTRY_MIRRORS"
 
+# validate
 if ([string]::IsNullOrEmpty($DOCKER_VERSION)) {
     Log-Warn "Cannot verify Docker without version"
     exit 0
 }
+
+# install unpigz
 if (-not (Test-Command -Command "unpigz")) {
     Invoke-WebRequest -UseBasicParsing -Uri "https://aliacs-k8s-cn-hongkong.oss-cn-hongkong.aliyuncs.com/public/pkg/windows/pigz/pigz-v2.3.1.zip" -OutFile "${tmp}\pigz.zip"
     Expand-Archive -Force -Path "${tmp}\pigz.zip" -DestinationPath "${env:ProgramFiles}"
@@ -263,6 +315,33 @@ if (-not (Test-Command -Command "unpigz")) {
     Add-MpPreference -ExclusionProcess "${env:ProgramFiles}\pigz\unpigz.exe" -ErrorAction Ignore
     Restart-Service -Name "docker" -Force -ErrorAction Ignore
 }
+
+# generate docker configuration
+$dockerConfiguration = Get-Content -Path "${env:ProgramData}\docker\config\daemon.json" -ErrorAction Ignore | ConvertFrom-Json | ConvertTo-Hashtable
+if (-not $dockerConfiguration) {
+  $dockerConfiguration = @{}
+}
+if (-not [string]::IsNullOrEmpty($DOCKER_CONFIGURATION_ALLOW_NONDISTRIBUTABLE_ARTIFACT)) {
+  $dockerConfiguration["allow-nondistributable-artifacts"] = $DOCKER_CONFIGURATION_ALLOW_NONDISTRIBUTABLE_ARTIFACT -split ","
+}
+if ($DOCKER_CONFIGURATION_EXPERIMENTAL -eq "true") {
+  $dockerConfiguration["experimental"] = $true
+}
+try {
+  $dockerConfiguration["max-concurrent-downloads"] = [int]($DOCKER_CONFIGURATION_MAX_CONCURRENT_DOWNLOADS)
+} catch {}
+try {
+  $dockerConfiguration["max-concurrent-uploads"] = [int]($DOCKER_CONFIGURATION_MAX_CONCURRENT_UPLOADS)
+} catch{}
+try {
+  $dockerConfiguration["max-download-attempts"] = [int]($DOCKER_CONFIGURATION_MAX_DOWNLOAD_ATTEMPTS)
+} catch {}
+if (-not [string]::IsNullOrEmpty($DOCKER_CONFIGURATION_REGISTRY_MIRRORS)) {
+  $dockerConfiguration["registry-mirrors"] = $DOCKER_CONFIGURATION_REGISTRY_MIRRORS -split ","
+}
+$dockerConfiguration | ConvertTo-Json -Depth 32 -Compress | Out-File -FilePath "${env:ProgramData}\docker\config\daemon.json" -Encoding ascii -Force
+
+# validate docker version
 if (Test-Command -Command "dockerd") {
     $dockerVersionActual = $(Execute-Binary -FilePath "docker" -ArgumentList @("info"; "--format"; "`"{{ .ServerVersion }}`""))
     $dockerVersionExpected = "${DOCKER_VERSION}"
@@ -279,6 +358,7 @@ if (Test-Command -Command "dockerd") {
         }
         $service | Where-Object {$_.StartType -ne "Automatic"} | Set-Service -StartupType Automatic | Out-Null
         $service | Where-Object {$_.Status -ne "Running"} | Start-Service -ErrorAction Ignore -WarningAction Ignore | Out-Null
+        $service | Restart-Service | Out-Null
 
         Log-Info "Found Docker, version ${dockerVersionActual}"
         exit 0
@@ -286,6 +366,7 @@ if (Test-Command -Command "dockerd") {
     Log-Warn "Found Docker, but the version ${dockerVersionActual} is stale"
 }
 
+# install docker
 if ([string]::IsNullOrEmpty($DOCKER_DOWNLOAD_URI)) {
     $dockerIdxJson = $(curl.exe -sSkL https://dockermsft.blob.core.windows.net/dockercontainer/DockerMsftIndex.json | Out-String | ConvertFrom-Json)
     $vs = $DOCKER_VERSION -split '\.'

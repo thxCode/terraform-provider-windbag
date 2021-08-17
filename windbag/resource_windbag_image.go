@@ -320,11 +320,21 @@ func resourceWindbagImageCreate(ctx context.Context, d *schema.ResourceData, met
 	var p = meta.(*provider)
 	var workers = utils.ToInterfaceSlice(d.Get("worker"))
 	var workerDialers = make(map[string]dial.Dialer, len(workers))
+	// allow pushing foreign layers
+	if p.docker.AllowNonDistributableArtifact != nil {
+		var regAddresses []string
+		for _, r := range utils.ToInterfaceSlice(d.Get("registry")) {
+			var reg = utils.ToStringInterfaceMap(r)
+			var regAddress = utils.ToString(reg["address"])
+			regAddresses = append(regAddresses, regAddress)
+		}
+		p.docker.AllowNonDistributableArtifact = regAddresses
+	}
 	for _, w := range workers {
 		var worker = utils.ToStringInterfaceMap(w)
 		var workerAddress = utils.ToString(worker["address"])
 		var workerSSH = utils.ToStringInterfaceMap(worker["ssh"])
-		var workerDialer, err = p.dialWorkerBySSH(ctx, id, workerAddress, workerSSH)
+		var workerDialer, err = p.dialWorkerBySSH(ctx, id, workerAddress, workerSSH, true)
 		if err != nil {
 			return diag.Errorf("failed to dial worker %s via SSH: %v", workerAddress, err)
 		}
@@ -640,7 +650,7 @@ func resourceWindbagImageRead(ctx context.Context, d *schema.ResourceData, meta 
 		var worker = utils.ToStringInterfaceMap(w)
 		var workerAddress = utils.ToString(worker["address"])
 		var workerSSH = utils.ToStringInterfaceMap(worker["ssh"])
-		var workerDialer, err = p.dialWorkerBySSH(ctx, id, workerAddress, workerSSH)
+		var workerDialer, err = p.dialWorkerBySSH(ctx, id, workerAddress, workerSSH, false)
 		if err != nil {
 			return diag.Errorf("failed to dial worker %s via SSH: %v", workerAddress, err)
 		}
@@ -948,7 +958,7 @@ func validationWindbagImageWorkerAddress(i interface{}, k string) (warnings []st
 	return warnings, errors
 }
 
-func (p *provider) dialWorkerBySSH(ctx context.Context, id string, address string, ssh map[string]interface{}) (w dial.Dialer, err error) {
+func (p *provider) dialWorkerBySSH(ctx context.Context, id string, address string, ssh map[string]interface{}, configureDocker bool) (w dial.Dialer, err error) {
 	var opts dial.SSHOptions
 	opts.Address = address
 	opts.Username = utils.ToString(ssh["username"])
@@ -977,7 +987,11 @@ func (p *provider) dialWorkerBySSH(ctx context.Context, id string, address strin
 			}
 		}()
 
-		// confirm whether the docker version is matched.
+		// configure docker
+		if !configureDocker {
+			return nil
+		}
+		// configure docker, and install docker if the version isn't matched.
 		if dockerBuild != nil {
 			err = w.PowerShell(ctx, nil, func(ctx context.Context, ps *powershell.PowerShell) error {
 				var psc, err = ps.Commands()
@@ -994,7 +1008,13 @@ func (p *provider) dialWorkerBySSH(ctx context.Context, id string, address strin
 					p.docker,
 					`
 $env:DOCKER_VERSION="{{ .Version }}";
-$env:DOCKER_DOWNLOAD_URI="{{ .DownloadURI }}"; 
+$env:DOCKER_DOWNLOAD_URI="{{ .DownloadURI }}";
+$env:DOCKER_CONFIGURATION_ALLOW_NONDISTRIBUTABLE_ARTIFACT="{{ .AllowNonDistributableArtifact | join ',' }}";
+$env:DOCKER_CONFIGURATION_EXPERIMENTAL="{{ .Experimental }}";
+$env:DOCKER_CONFIGURATION_MAX_CONCURRENT_DOWNLOADS="{{ .MaxConcurrentDownloads }}";
+$env:DOCKER_CONFIGURATION_MAX_CONCURRENT_UPLOADS="{{ .MaxConcurrentUploads }}";
+$env:DOCKER_CONFIGURATION_MAX_DOWNLOAD_ATTEMPTS="{{ .MaxDownloadAttempts }}";
+$env:DOCKER_CONFIGURATION_REGISTRY_MIRRORS="{{ .RegistryMirrors | join ',' }}";
 Invoke-WebRequest -UseBasicParsing -Uri https://raw.githubusercontent.com/thxCode/terraform-provider-windbag/master/tools/docker.ps1 | Invoke-Expression;
 `,
 				)
@@ -1020,7 +1040,6 @@ Invoke-WebRequest -UseBasicParsing -Uri https://raw.githubusercontent.com/thxCod
 			dockerBuild = nil // to skip the docker version verification
 			return resource.RetryableError(errors.New("retry again"))
 		}
-
 		// confirm whether the docker server is established.
 		if p.docker != nil {
 			err = w.PowerShell(ctx, nil, func(ctx context.Context, ps *powershell.PowerShell) error {

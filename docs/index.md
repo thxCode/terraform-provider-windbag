@@ -359,4 +359,10 @@ $ tf plan \
 Optional:
 
 - **download_uri** (String) Specify the URI to download the Docker ZIP archive.
+- **experimental** (Boolean) Specify whether to enable experimental feature. Defaults to `true`.
+- **max_concurrent_downloads** (Number) Specify the max concurrent downloads for each pull. Defaults to `8`.
+- **max_concurrent_uploads** (Number) Specify the max concurrent uploads for each push. Defaults to `8`.
+- **max_download_attempts** (Number) Specify the max download attempts for each pull. Defaults to `10`.
+- **push_foreign_layers** (Boolean) Specify where to push none distributable artifacts, like 'mcr.microsoft.com' layer. Defaults to `false`.
+- **registry_mirrors** (List of String) Specify the list of registry mirror.
 - **version** (String) Specify the version of Docker. Defaults to `19.03`.

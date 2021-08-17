@@ -60,6 +60,44 @@ func registerSchema(p *schema.Provider) {
 						Type:        schema.TypeString,
 						Optional:    true,
 					},
+					"experimental": {
+						Description: "Specify whether to enable experimental feature.",
+						Type:        schema.TypeBool,
+						Optional:    true,
+						Default:     true,
+					},
+					"push_foreign_layers": {
+						Description: "Specify where to push none distributable artifacts, like 'mcr.microsoft.com' layer.",
+						Type:        schema.TypeBool,
+						Optional:    true,
+						Default:     false,
+					},
+					"max_concurrent_downloads": {
+						Description: "Specify the max concurrent downloads for each pull.",
+						Type:        schema.TypeInt,
+						Optional:    true,
+						Default:     8,
+					},
+					"max_concurrent_uploads": {
+						Description: "Specify the max concurrent uploads for each push.",
+						Type:        schema.TypeInt,
+						Optional:    true,
+						Default:     8,
+					},
+					"max_download_attempts": {
+						Description: "Specify the max download attempts for each pull.",
+						Type:        schema.TypeInt,
+						Optional:    true,
+						Default:     10,
+					},
+					"registry_mirrors": {
+						Description: "Specify the list of registry mirror.",
+						Type:        schema.TypeList,
+						Optional:    true,
+						Elem: &schema.Schema{
+							Type: schema.TypeString,
+						},
+					},
 				},
 			},
 		},
@@ -81,8 +119,14 @@ type provider struct {
 }
 
 type dockerBuilder struct {
-	Version     string
-	DownloadURI string
+	Version                       string
+	DownloadURI                   string
+	AllowNonDistributableArtifact []string
+	Experimental                  bool
+	MaxConcurrentDownloads        int
+	MaxConcurrentUploads          int
+	MaxDownloadAttempts           int
+	RegistryMirrors               []string
 }
 
 func configure(_ string, _ *schema.Provider) func(context.Context, *schema.ResourceData) (interface{}, diag.Diagnostics) {
@@ -97,6 +141,26 @@ func configure(_ string, _ *schema.Provider) func(context.Context, *schema.Resou
 			}
 			if vi, ok := docker["download_uri"]; ok {
 				builder.DownloadURI = utils.ToString(vi)
+			}
+			if vi, ok := docker["experimental"]; ok {
+				builder.Experimental = utils.ToBool(vi, true)
+			}
+			if vi, ok := docker["push_foreign_layers"]; ok {
+				if utils.ToBool(vi) {
+					builder.AllowNonDistributableArtifact = make([]string, 0, 0)
+				}
+			}
+			if vi, ok := docker["max_concurrent_downloads"]; ok {
+				builder.MaxConcurrentDownloads = utils.ToInt(vi, 8)
+			}
+			if vi, ok := docker["max_concurrent_uploads"]; ok {
+				builder.MaxConcurrentUploads = utils.ToInt(vi, 8)
+			}
+			if vi, ok := docker["max_download_attempts"]; ok {
+				builder.MaxDownloadAttempts = utils.ToInt(vi, 10)
+			}
+			if vi, ok := docker["registry_mirrors"]; ok {
+				builder.RegistryMirrors = utils.ToStringSlice(vi)
 			}
 			p.docker = &builder
 		}
