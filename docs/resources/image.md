@@ -147,10 +147,12 @@ resource "windbag_image" "example" {
 - **id** (String) The ID of this resource.
 - **isolation** (String) Specify the isolation technology of container.
 - **label** (Map of String) Specify the metadata label.
+- **manifest** (Boolean) Specify to manifest the build artifact. Defaults to `true`.
+- **manifest_timeout** (String) Specify the timeout to manifest pre tag. Defaults to `15m`.
 - **no_cache** (Boolean) Specify the isolation technology of container. Defaults to `false`.
 - **path** (String) Specify the path to build.
 - **push** (Boolean) Specify to push the build artifact. Defaults to `true`.
-- **push_timeout** (String) Specify the timeout to push. Defaults to `15m`.
+- **push_timeout** (String) Specify the timeout to push pre build tag. Defaults to `15m`.
 - **registry** (Block Set) Specify the authentication registry of registry. (see [below for nested schema](#nestedblock--registry))
 - **rm** (Boolean) Specify to remove intermediate containers after a successful build. Defaults to `true`.
 - **target** (String) Specify the target of build stage to build.

@@ -123,7 +123,19 @@ func resourceWindbagImage() *schema.Resource {
 				Default:     true,
 			},
 			"push_timeout": {
-				Description: "Specify the timeout to push.",
+				Description: "Specify the timeout to push pre build tag.",
+				Type:        schema.TypeString,
+				Optional:    true,
+				Default:     "15m",
+			},
+			"manifest": {
+				Description: "Specify to manifest the build artifact.",
+				Type:        schema.TypeBool,
+				Optional:    true,
+				Default:     true,
+			},
+			"manifest_timeout": {
+				Description: "Specify the timeout to manifest pre tag.",
 				Type:        schema.TypeString,
 				Optional:    true,
 				Default:     "15m",
@@ -736,13 +748,12 @@ func resourceWindbagImageRead(ctx context.Context, d *schema.ResourceData, meta 
 		push
 	*/
 
-	log.Infof("==== %s pushing on all workers ====", id)
 	if !utils.ToBool(d.Get("push")) {
 		log.Warnf(" Skipped to push the image %q", id)
 		return nil
 	}
+	log.Infof("==== %s pushing on all workers ====", id)
 	var workerPushTimeout = utils.ToDuration(d.Get("push_timeout"), 15*time.Minute)
-
 	eg, egctx = errgroup.WithContext(ctx)
 	for _, w := range workers {
 		var pushWorker = utils.ToStringInterfaceMap(w)
@@ -803,7 +814,16 @@ func resourceWindbagImageRead(ctx context.Context, d *schema.ResourceData, meta 
 	}
 	log.Infof("==== %s pushed on all workers ====", id)
 
+	/*
+		manifest
+	*/
+
+	if !utils.ToBool(d.Get("manifest")) {
+		log.Warnf(" Skipped to push the image %q", id)
+		return nil
+	}
 	log.Infof("==== %s manifesting on the highest worker ====", id)
+	var workerManifestTimeout = utils.ToDuration(d.Get("manifest_timeout"), 15*time.Minute)
 	var manifestWorker, tagSuffixes = func() (manifestWorker map[string]interface{}, tagSuffixes []string) {
 		var manifestWorkerBuild int
 		for _, w := range workers {
@@ -838,7 +858,7 @@ func resourceWindbagImageRead(ctx context.Context, d *schema.ResourceData, meta 
 		eg.Go(func() error {
 			log.Infof("Manifesting image %q on worker %q", id, workerAddress)
 			var workerDialer = workerDialers[workerAddress]
-			var err = resource.RetryContext(egctx, workerPushTimeout, func() *resource.RetryError {
+			var err = resource.RetryContext(egctx, workerManifestTimeout, func() *resource.RetryError {
 				var err = workerDialer.PowerShell(egctx, nil, func(ctx context.Context, ps *powershell.PowerShell) error {
 					var psc, err = ps.Commands()
 					if err != nil {
