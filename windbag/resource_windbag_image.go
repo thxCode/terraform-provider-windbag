@@ -367,6 +367,68 @@ func resourceWindbagImageCreate(ctx context.Context, d *schema.ResourceData, met
 		var workerID = fmt.Sprintf("%s/%s", workerAddress, id)
 		var workerWorkDir = utils.ToString(buildWorker["work_dir"])
 
+		// retrieve information
+		if info := utils.ToStringInterfaceMap(buildWorker["build_information"]); len(info) == 0 {
+			var workerDialer = workerDialers[workerAddress]
+			var err = workerDialer.PowerShell(ctx, nil, func(ctx context.Context, ps *powershell.PowerShell) error {
+				var psc, err = ps.Commands()
+				if err != nil {
+					return errors.Wrap(err, "failed to setup interaction")
+				}
+				defer func() {
+					if err := psc.Close(); err != nil {
+						log.Errorf("Failed to close interaction: %v", err)
+					}
+				}()
+
+				// get host release
+				var command = `Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion" | Select-Object -Property CurrentMajorVersionNumber,CurrentMinorVersionNumber,CurrentBuildNumber,UBR,ReleaseId,BuildLabEx,CurrentBuild | ConvertTo-JSON -Compress;`
+				stdout, stderr, err := psc.Execute(ctx, workerID, command)
+				if err != nil {
+					return errors.Wrap(err, "failed to retrieve host version")
+				}
+				if stderr != "" {
+					return errors.Errorf("error retrieving host version: %s", stderr)
+				}
+				var hostVersion map[string]interface{}
+				if err := utils.UnmarshalJSON(utils.UnsafeStringToBytes(stdout), &hostVersion); err != nil {
+					return errors.Wrap(err, "failed to unmarshal host version retrieve output")
+				}
+				info["os_major"] = utils.ToInt(hostVersion["CurrentMajorVersionNumber"])
+				info["os_minor"] = utils.ToInt(hostVersion["CurrentMinorVersionNumber"])
+				info["os_build"] = utils.ToInt(hostVersion["CurrentBuildNumber"])
+				info["os_ubr"] = utils.ToInt(hostVersion["UBR"])
+				info["os_release"] = utils.ToString(hostVersion["ReleaseId"])
+
+				// get host arch
+				command = `[Environment]::GetEnvironmentVariable("PROCESSOR_ARCHITECTURE", [EnvironmentVariableTarget]::Machine);`
+				stdout, stderr, err = psc.Execute(ctx, workerID, command)
+				if err != nil {
+					return errors.Wrap(err, "failed to retrieve host arch")
+				}
+				if stderr != "" {
+					return errors.Errorf("error retrieving host arch: %s", stderr)
+				}
+				info["os_arch"] = func() string {
+					var hostArch = strings.ToLower(strings.TrimSpace(stdout))
+					switch hostArch {
+					case "arm":
+						return "arm"
+					case "x86", "386":
+						return "386"
+					default:
+						return "amd64"
+					}
+				}()
+
+				return nil
+			})
+			if err != nil {
+				return diag.Errorf("failed to retrieve information on worker %s: %v", workerAddress, err)
+			}
+			buildWorker["build_information"].(*schema.Set).Add(info)
+		}
+
 		// construct context
 		if info := utils.ToStringInterfaceMap(buildWorker["build_context"]); len(info) == 0 {
 			var workerDialer = workerDialers[workerAddress]
@@ -453,68 +515,6 @@ New-Item -Force -ItemType Directory -Path "$Path/dockerfile" | Out-Null;
 				return diag.Errorf("failed to create build context on worker %s: %v", workerAddress, err)
 			}
 			buildWorker["build_context"].(*schema.Set).Add(info)
-		}
-
-		// retrieve information
-		if info := utils.ToStringInterfaceMap(buildWorker["build_information"]); len(info) == 0 {
-			var workerDialer = workerDialers[workerAddress]
-			var err = workerDialer.PowerShell(ctx, nil, func(ctx context.Context, ps *powershell.PowerShell) error {
-				var psc, err = ps.Commands()
-				if err != nil {
-					return errors.Wrap(err, "failed to setup interaction")
-				}
-				defer func() {
-					if err := psc.Close(); err != nil {
-						log.Errorf("Failed to close interaction: %v", err)
-					}
-				}()
-
-				// get host release
-				var command = `Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion" | Select-Object -Property CurrentMajorVersionNumber,CurrentMinorVersionNumber,CurrentBuildNumber,UBR,ReleaseId,BuildLabEx,CurrentBuild | ConvertTo-JSON -Compress;`
-				stdout, stderr, err := psc.Execute(ctx, workerID, command)
-				if err != nil {
-					return errors.Wrap(err, "failed to retrieve host version")
-				}
-				if stderr != "" {
-					return errors.Errorf("error retrieving host version: %s", stderr)
-				}
-				var hostVersion map[string]interface{}
-				if err := utils.UnmarshalJSON(utils.UnsafeStringToBytes(stdout), &hostVersion); err != nil {
-					return errors.Wrap(err, "failed to unmarshal host version retrieve output")
-				}
-				info["os_major"] = utils.ToInt(hostVersion["CurrentMajorVersionNumber"])
-				info["os_minor"] = utils.ToInt(hostVersion["CurrentMinorVersionNumber"])
-				info["os_build"] = utils.ToInt(hostVersion["CurrentBuildNumber"])
-				info["os_ubr"] = utils.ToInt(hostVersion["UBR"])
-				info["os_release"] = utils.ToString(hostVersion["ReleaseId"])
-
-				// get host arch
-				command = `[Environment]::GetEnvironmentVariable("PROCESSOR_ARCHITECTURE", [EnvironmentVariableTarget]::Machine);`
-				stdout, stderr, err = psc.Execute(ctx, workerID, command)
-				if err != nil {
-					return errors.Wrap(err, "failed to retrieve host arch")
-				}
-				if stderr != "" {
-					return errors.Errorf("error retrieving host arch: %s", stderr)
-				}
-				info["os_arch"] = func() string {
-					var hostArch = strings.ToLower(strings.TrimSpace(stdout))
-					switch hostArch {
-					case "arm":
-						return "arm"
-					case "x86", "386":
-						return "386"
-					default:
-						return "amd64"
-					}
-				}()
-
-				return nil
-			})
-			if err != nil {
-				return diag.Errorf("failed to retrieve information on worker %s: %v", workerAddress, err)
-			}
-			buildWorker["build_information"].(*schema.Set).Add(info)
 		}
 	}
 	log.Infof("==== %s shipped build context to all workers ====", id)
