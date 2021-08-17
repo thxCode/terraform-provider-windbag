@@ -23,6 +23,7 @@ import (
 	"github.com/thxcode/terraform-provider-windbag/windbag/log"
 	"github.com/thxcode/terraform-provider-windbag/windbag/template"
 	"github.com/thxcode/terraform-provider-windbag/windbag/utils"
+	"io"
 )
 
 func resourceWindbagImage() *schema.Resource {
@@ -54,6 +55,11 @@ func resourceWindbagImage() *schema.Resource {
 				Elem: &schema.Schema{
 					Type: schema.TypeString,
 				},
+			},
+			"disable_target_platform_args_injection": {
+				Description: "Specify whether to disable the target platform arguments injection, ref to https://docs.docker.com/engine/reference/builder/#automatic-platform-args-in-the-global-scope.",
+				Type:        schema.TypeBool,
+				Optional:    true,
 			},
 			"file": {
 				Description: "Specify the path of the building Dockerfile.",
@@ -501,7 +507,22 @@ New-Item -Force -ItemType Directory -Path "$Path/dockerfile" | Out-Null;
 				info["buildpath"] = buildpathArchiveExpandDst
 
 				// transfer build dockerfile
-				var dockerfile, _ = os.Open(dockerfilePath)
+				var dockerfile io.Reader
+				if !utils.ToBool(d.Get("disable_target_platform_args_injection")) {
+					var f, _ = os.Open(dockerfilePath)
+					var buildInfo = utils.ToStringInterfaceMap(buildWorker["build_information"])
+					var (
+						targetType    = "windows"
+						targetArch    = utils.ToString(buildInfo["os_arch"])
+						targetVariant = utils.ToString(buildInfo["os_release"])
+					)
+					dockerfile = docker.InjectTargetPlatformArgsToDockerfile(f, targetType, targetArch, targetVariant)
+					_ = f.Close()
+				} else {
+					var f, _ = os.Open(dockerfilePath)
+					defer func() { _ = f.Close() }()
+					dockerfile = f
+				}
 				var dockerfileShippedDst = filepath.Join(workerWorkDir, "dockerfile", fmt.Sprintf("Dockerfile.%s", id))
 				_, err = workerDialer.Copy(ctx, dockerfile, dockerfileShippedDst)
 				if err != nil {
@@ -667,7 +688,6 @@ func resourceWindbagImageRead(ctx context.Context, d *schema.ResourceData, meta 
 				var workerBuildInformation = utils.ToStringInterfaceMap(buildWorker["build_information"])
 				var workerRelease = utils.ToString(workerBuildInformation["os_release"])
 				var workerArch = utils.ToString(workerBuildInformation["os_arch"])
-				var workerPlatform = fmt.Sprintf("%s/%s", workerOS, workerArch)
 				var workerTagSuffix = fmt.Sprintf("%s-%s-%s", workerOS, workerArch, workerRelease)
 				var workerBuildContext = utils.ToStringInterfaceMap(buildWorker["build_context"])
 
@@ -678,9 +698,6 @@ func resourceWindbagImageRead(ctx context.Context, d *schema.ResourceData, meta 
 						buildArgs[k] = v
 					}
 					buildArgs["RELEASEID"] = &workerRelease
-					buildArgs["TARGETPLATFORM"] = &workerPlatform
-					buildArgs["TARGETOS"] = &workerOS
-					buildArgs["TARGETARCH"] = &workerArch
 					opts.BuildArgs = buildArgs
 					// redirect dockerfile
 					opts.Dockerfile = utils.ToString(workerBuildContext["dockerfile"])

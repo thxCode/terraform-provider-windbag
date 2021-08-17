@@ -141,6 +141,7 @@ resource "windbag_image" "example" {
 ### Optional
 
 - **build_arg** (Map of String) Specify the build-time arguments.
+- **disable_target_platform_args_injection** (Boolean) Specify whether to disable the target platform arguments injection, ref to https://docs.docker.com/engine/reference/builder/#automatic-platform-args-in-the-global-scope.
 - **file** (String) Specify the path of the building Dockerfile.
 - **force_rm** (Boolean) Specify to remove intermediate containers. Defaults to `false`.
 - **id** (String) The ID of this resource.
