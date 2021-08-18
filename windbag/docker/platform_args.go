@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"strings"
 )
 
 const (
@@ -28,7 +29,7 @@ func InjectTargetPlatformArgsToDockerfile(raw io.Reader, os, arch, variant strin
 	for s.Scan() {
 		var bs = s.Bytes()
 		if bytes.Compare(bs[:len(commandArg)], []byte(commandArg)) == 0 {
-			switch platformArg := string(bs[len(commandArg):]); platformArg {
+			switch platformArg := strings.TrimSpace(string(bs[len(commandArg):])); platformArg {
 			case platformArgTargetPlatform:
 				bs = []byte(commandArg + platformArg + `="` + platform + `"`)
 			case platformArgTargetOs:

@@ -27,26 +27,24 @@ resource "windbag_image" "pause_window" {
   push = true
 
   # indicate the build args release related mapper
-  build_arg_release_mapper = [
-    {
-      release = "1809"
-      build_arg = {
-        "BASE_IMAGE_TAG" = "7.1.4-nanoserver-1809-20210812"
-      }
-    },
-    {
-      release = "1909"
-      build_arg = {
-        "BASE_IMAGE_TAG" = "7.1.4-nanoserver-1909-20210812"
-      }
-    },
-    {
-      release = "2004"
-      build_arg = {
-        "BASE_IMAGE_TAG" = "7.1.4-nanoserver-2004-20210812"
-      }
+  build_arg_release_mapper {
+    release = "1809"
+    build_arg = {
+      "BASE_IMAGE_TAG" = "7.1.4-nanoserver-1809-20210812"
     }
-  ]
+  }
+  build_arg_release_mapper {
+    release = "1909"
+    build_arg = {
+      "BASE_IMAGE_TAG" = "7.1.4-nanoserver-1909-20210812"
+    }
+  }
+  build_arg_release_mapper {
+    release = "2004"
+    build_arg = {
+      "BASE_IMAGE_TAG" = "7.1.4-nanoserver-2004-20210812"
+    }
+  }
 
   # indicate registries
   registry {

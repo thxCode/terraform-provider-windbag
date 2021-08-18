@@ -3,6 +3,7 @@ package windbag
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -23,7 +24,6 @@ import (
 	"github.com/thxcode/terraform-provider-windbag/windbag/log"
 	"github.com/thxcode/terraform-provider-windbag/windbag/template"
 	"github.com/thxcode/terraform-provider-windbag/windbag/utils"
-	"io"
 )
 
 func resourceWindbagImage() *schema.Resource {
@@ -58,8 +58,13 @@ func resourceWindbagImage() *schema.Resource {
 			},
 			"build_arg_release_mapper": {
 				Description: "Specify the release related build-time arguments mapper.",
-				Type:        schema.TypeList,
+				Type:        schema.TypeSet,
 				Optional:    true,
+				Set: func(i interface{}) int {
+					var m = utils.ToStringInterfaceMap(i)
+					var release = utils.ToString(m["release"])
+					return utils.HashString(release)
+				},
 				Elem: &schema.Resource{
 					Schema: map[string]*schema.Schema{
 						"release": {
@@ -171,6 +176,11 @@ func resourceWindbagImage() *schema.Resource {
 				Description: "Specify the authentication registry of registry.",
 				Type:        schema.TypeSet,
 				Optional:    true,
+				Set: func(i interface{}) int {
+					var m = utils.ToStringInterfaceMap(i)
+					var release = utils.ToString(m["address"])
+					return utils.HashString(release)
+				},
 				Elem: &schema.Resource{
 					Schema: map[string]*schema.Schema{
 						"address": {
@@ -207,6 +217,11 @@ func resourceWindbagImage() *schema.Resource {
 				Description: "Specify the workers to build.",
 				Type:        schema.TypeSet,
 				Required:    true,
+				Set: func(i interface{}) int {
+					var m = utils.ToStringInterfaceMap(i)
+					var release = utils.ToString(m["address"])
+					return utils.HashString(release)
+				},
 				Elem: &schema.Resource{
 					Schema: map[string]*schema.Schema{
 						"address": {
@@ -1051,14 +1066,28 @@ func (p *provider) dialWorkerBySSH(ctx context.Context, id string, address strin
 				var command = template.TryRender(
 					p.docker,
 					`
+{{- if .Version }}
 $env:DOCKER_VERSION="{{ .Version }}";
+{{- end }}
+{{- if .DownloadURI }}
 $env:DOCKER_DOWNLOAD_URI="{{ .DownloadURI }}";
-$env:DOCKER_CONFIGURATION_ALLOW_NONDISTRIBUTABLE_ARTIFACT="{{ .AllowNonDistributableArtifact | join ',' }}";
-$env:DOCKER_CONFIGURATION_EXPERIMENTAL="{{ .Experimental }}";
+{{- end }}
+{{- if .AllowNonDistributableArtifact }}
+$env:DOCKER_CONFIGURATION_ALLOW_NONDISTRIBUTABLE_ARTIFACT="{{ .AllowNonDistributableArtifact | join "," }}";
+{{- end }}
+$env:DOCKER_CONFIGURATION_EXPERIMENTAL="{{ .Experimental | toString }}";
+{{- if .MaxConcurrentDownloads }}
 $env:DOCKER_CONFIGURATION_MAX_CONCURRENT_DOWNLOADS="{{ .MaxConcurrentDownloads }}";
+{{- end }}
+{{- if .MaxConcurrentUploads }}
 $env:DOCKER_CONFIGURATION_MAX_CONCURRENT_UPLOADS="{{ .MaxConcurrentUploads }}";
+{{- end }}
+{{- if .MaxDownloadAttempts }}
 $env:DOCKER_CONFIGURATION_MAX_DOWNLOAD_ATTEMPTS="{{ .MaxDownloadAttempts }}";
-$env:DOCKER_CONFIGURATION_REGISTRY_MIRRORS="{{ .RegistryMirrors | join ',' }}";
+{{- end }}
+{{- if .RegistryMirrors }}
+$env:DOCKER_CONFIGURATION_REGISTRY_MIRRORS="{{ .RegistryMirrors | join "," }}";
+{{- end }}
 Invoke-WebRequest -UseBasicParsing -Uri https://raw.githubusercontent.com/thxCode/terraform-provider-windbag/master/tools/docker.ps1 | Invoke-Expression;
 `,
 				)
@@ -1073,7 +1102,7 @@ Invoke-WebRequest -UseBasicParsing -Uri https://raw.githubusercontent.com/thxCod
 				return nil
 			})
 			if err != nil {
-				log.Errorf("Failed to execute docker-version on worker %q: %v", address, err)
+				log.Errorf("Failed to execute docker version validation on worker %q: %v", address, err)
 				return resource.RetryableError(errors.Wrapf(err, "failed to verify docker version on worker %s", address))
 			}
 

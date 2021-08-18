@@ -141,7 +141,7 @@ resource "windbag_image" "example" {
 ### Optional
 
 - **build_arg** (Map of String) Specify the build-time arguments.
-- **build_arg_release_mapper** (Block List) Specify the release related build-time arguments mapper. (see [below for nested schema](#nestedblock--build_arg_release_mapper))
+- **build_arg_release_mapper** (Block Set) Specify the release related build-time arguments mapper. (see [below for nested schema](#nestedblock--build_arg_release_mapper))
 - **disable_release_build_args_injection** (Boolean) Specify whether to disable the release related build arguments injection, ref to https://registry.terraform.io/providers/thxCode/windbag/latest/docs#highlight.
 - **disable_target_platform_args_injection** (Boolean) Specify whether to disable the target platform arguments injection, ref to https://registry.terraform.io/providers/thxCode/windbag/latest/docs#highlight.
 - **file** (String) Specify the path of the building Dockerfile.

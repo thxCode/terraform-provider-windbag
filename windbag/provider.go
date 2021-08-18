@@ -134,7 +134,14 @@ func configure(_ string, _ *schema.Provider) func(context.Context, *schema.Resou
 		var p provider
 
 		if v, ok := d.GetOk("docker"); ok {
-			var builder dockerBuilder
+			var builder = dockerBuilder{
+				Version:                "19.03",
+				DownloadURI:            "",
+				Experimental:           true,
+				MaxConcurrentDownloads: 8,
+				MaxConcurrentUploads:   8,
+				MaxDownloadAttempts:    10,
+			}
 			var docker = utils.ToStringInterfaceMap(v)
 			if vi, ok := docker["version"]; ok {
 				builder.Version = utils.ToString(vi)
