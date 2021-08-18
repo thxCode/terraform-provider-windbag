@@ -1096,7 +1096,7 @@ Invoke-WebRequest -UseBasicParsing -Uri https://raw.githubusercontent.com/thxCod
 					return errors.Wrap(err, "failed to verify docker version")
 				}
 				if stderr != "" {
-					return errors.Errorf("error verifing docker version: %s", stderr)
+					return errors.Errorf("error verifying docker version: %s", stderr)
 				}
 
 				return nil
