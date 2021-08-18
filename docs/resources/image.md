@@ -141,7 +141,9 @@ resource "windbag_image" "example" {
 ### Optional
 
 - **build_arg** (Map of String) Specify the build-time arguments.
-- **disable_target_platform_args_injection** (Boolean) Specify whether to disable the target platform arguments injection, ref to https://docs.docker.com/engine/reference/builder/#automatic-platform-args-in-the-global-scope.
+- **build_arg_release_mapper** (Block List) Specify the release related build-time arguments mapper. (see [below for nested schema](#nestedblock--build_arg_release_mapper))
+- **disable_release_build_args_injection** (Boolean) Specify whether to disable the release related build arguments injection, ref to https://registry.terraform.io/providers/thxCode/windbag/latest/docs#highlight.
+- **disable_target_platform_args_injection** (Boolean) Specify whether to disable the target platform arguments injection, ref to https://registry.terraform.io/providers/thxCode/windbag/latest/docs#highlight.
 - **file** (String) Specify the path of the building Dockerfile.
 - **force_rm** (Boolean) Specify to remove intermediate containers. Defaults to `false`.
 - **id** (String) The ID of this resource.
@@ -209,6 +211,18 @@ Read-only:
 - **os_release** (String)
 - **os_ubr** (Number)
 
+
+
+<a id="nestedblock--build_arg_release_mapper"></a>
+### Nested Schema for `build_arg_release_mapper`
+
+Required:
+
+- **release** (String) Specify the release ID of worker.
+
+Optional:
+
+- **build_arg** (Map of String) Specify the build-time arguments of related release.
 
 
 <a id="nestedblock--registry"></a>

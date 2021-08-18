@@ -17,6 +17,20 @@ So boring~
 
 Windbag can help you to complete the `docker build`, `docker push` and `docker manifest` without Hyper-V support.
 
+## Highlight
+
+- Inject [**Target** Platform Arguments](https://docs.docker.com/engine/reference/builder/#automatic-platform-args-in-the-global-scope) like what [BuildKit](https://docs.docker.com/engine/reference/builder/#buildkit) does.
+
+  + `TARGETPLATFORM` : platform of the build result, e.g. `windows/amd64`, `windows/arm64`.
+  + `TARGETOS` : OS component of `TARGETPLATFORM`, always be `windows`.
+  + `TARGETARCH` : architecture component of `TARGETPLATFORM`, e.g. `amd64`, `arm64`.
+  + `TARGETVARIANT` : variant component of `TARGETPLATFORM`, e.g. `1809`, `2004`.
+
+- Inject Release Build Arguments.
+
+  + `WINDBAGRELEASE` : OS release ID, the stale argument `RELEASEID` has been deprecated, e.g. `1809`, `2004`.
+  + `WINDBAGRELEASE_*` : prefix of joining the build arguments related with OS release ID, which can be utilized to configure the basic image.
+
 ## How to enable SSH service on Windows host?
 
 You can run the following powershell commands through cloudbase-init/user-data scripts when the machine is initializing.
@@ -71,6 +85,28 @@ resource "windbag_image" "pause_window" {
   ]
   # indicate to push the image after build
   push = true
+
+  # indicate the build args release related mapper
+  build_arg_release_mapper = [
+    {
+      release = "1809"
+      build_arg = {
+        "BASE_IMAGE_TAG" = "7.1.4-nanoserver-1809-20210812"
+      }
+    },
+    {
+      release = "1909"
+      build_arg = {
+        "BASE_IMAGE_TAG" = "7.1.4-nanoserver-1909-20210812"
+      }
+    },
+    {
+      release = "2004"
+      build_arg = {
+        "BASE_IMAGE_TAG" = "7.1.4-nanoserver-2004-20210812"
+      }
+    }
+  ]
 
   # indicate registries
   registry {
@@ -328,7 +364,7 @@ output "windbag_image_artifacts" {
 }
 ```
 
-### generate terraform plan
+### Generate terraform plan
 
 ```bash
 

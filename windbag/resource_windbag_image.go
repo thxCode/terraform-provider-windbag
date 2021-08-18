@@ -56,8 +56,35 @@ func resourceWindbagImage() *schema.Resource {
 					Type: schema.TypeString,
 				},
 			},
+			"build_arg_release_mapper": {
+				Description: "Specify the release related build-time arguments mapper.",
+				Type:        schema.TypeList,
+				Optional:    true,
+				Elem: &schema.Resource{
+					Schema: map[string]*schema.Schema{
+						"release": {
+							Description: "Specify the release ID of worker.",
+							Type:        schema.TypeString,
+							Required:    true,
+						},
+						"build_arg": {
+							Description: "Specify the build-time arguments of related release.",
+							Type:        schema.TypeMap,
+							Optional:    true,
+							Elem: &schema.Schema{
+								Type: schema.TypeString,
+							},
+						},
+					},
+				},
+			},
 			"disable_target_platform_args_injection": {
-				Description: "Specify whether to disable the target platform arguments injection, ref to https://docs.docker.com/engine/reference/builder/#automatic-platform-args-in-the-global-scope.",
+				Description: "Specify whether to disable the target platform arguments injection, ref to https://registry.terraform.io/providers/thxCode/windbag/latest/docs#highlight.",
+				Type:        schema.TypeBool,
+				Optional:    true,
+			},
+			"disable_release_build_args_injection": {
+				Description: "Specify whether to disable the release related build arguments injection, ref to https://registry.terraform.io/providers/thxCode/windbag/latest/docs#highlight.",
 				Type:        schema.TypeBool,
 				Optional:    true,
 			},
@@ -685,6 +712,16 @@ func resourceWindbagImageRead(ctx context.Context, d *schema.ResourceData, meta 
 			return args
 		}(),
 	}
+	var extraBuildArgsMapper = make(map[string]map[string]*string)
+	for _, mapper := range utils.ToInterfaceSlice(d.Get("release_build_arg_mapper")) {
+		var buildArgsMapper = utils.ToStringInterfaceMap(mapper)
+		var buildRelease = utils.ToString(buildArgsMapper["release"])
+		var buildArgs = make(map[string]*string)
+		for k, v := range utils.ToStringStringMap(buildArgsMapper["build_arg"]) {
+			buildArgs[k] = &v
+		}
+		extraBuildArgsMapper[buildRelease] = buildArgs
+	}
 	eg, egctx := errgroup.WithContext(ctx)
 	for _, w := range workers {
 		var buildWorker = utils.ToStringInterfaceMap(w)
@@ -719,7 +756,14 @@ func resourceWindbagImageRead(ctx context.Context, d *schema.ResourceData, meta 
 					for k, v := range buildArgs {
 						buildArgs[k] = v
 					}
+					// NB(thxCode): Deprecated, replace with WINDBAGRELEASE
 					buildArgs["RELEASEID"] = &workerRelease
+					buildArgs["WINDBAGRELEASE"] = &workerRelease
+					if extraBuildArgs, exist := extraBuildArgsMapper[workerRelease]; exist {
+						for k, v := range extraBuildArgs {
+							buildArgs["WINDBAGRELEASE_"+k] = v
+						}
+					}
 					opts.BuildArgs = buildArgs
 					// redirect dockerfile
 					opts.Dockerfile = utils.ToString(workerBuildContext["dockerfile"])
