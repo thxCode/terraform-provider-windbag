@@ -319,31 +319,43 @@ if (-not (Test-Command -Command "unpigz")) {
 # generate docker configuration
 $dockerConfiguration = Get-Content -Path "${env:ProgramData}\docker\config\daemon.json" -ErrorAction Ignore | ConvertFrom-Json | ConvertTo-Hashtable
 if (-not $dockerConfiguration) {
-  $dockerConfiguration = @{}
+    $dockerConfiguration = @{}
 }
 if (-not [string]::IsNullOrEmpty($DOCKER_CONFIGURATION_ALLOW_NONDISTRIBUTABLE_ARTIFACT)) {
-  $dockerConfiguration["allow-nondistributable-artifacts"] = $DOCKER_CONFIGURATION_ALLOW_NONDISTRIBUTABLE_ARTIFACT -split ","
+    $dockerConfiguration["allow-nondistributable-artifacts"] = @($DOCKER_CONFIGURATION_ALLOW_NONDISTRIBUTABLE_ARTIFACT -split ",")
 }
 if ($DOCKER_CONFIGURATION_EXPERIMENTAL -eq "true") {
-  $dockerConfiguration["experimental"] = $true
+    $dockerConfiguration["experimental"] = $true
 }
 try {
-  $dockerConfiguration["max-concurrent-downloads"] = [int]($DOCKER_CONFIGURATION_MAX_CONCURRENT_DOWNLOADS)
-} catch {}
+    $dockerConfiguration["max-concurrent-downloads"] = [int]($DOCKER_CONFIGURATION_MAX_CONCURRENT_DOWNLOADS)
+} catch {
+    $dockerConfiguration["max-concurrent-downloads"] = 8
+}
 try {
-  $dockerConfiguration["max-concurrent-uploads"] = [int]($DOCKER_CONFIGURATION_MAX_CONCURRENT_UPLOADS)
-} catch{}
-try {
-  $dockerConfiguration["max-download-attempts"] = [int]($DOCKER_CONFIGURATION_MAX_DOWNLOAD_ATTEMPTS)
-} catch {}
+    $dockerConfiguration["max-concurrent-uploads"] = [int]($DOCKER_CONFIGURATION_MAX_CONCURRENT_UPLOADS)
+} catch{
+    $dockerConfiguration["max-concurrent-uploads"] = 8
+}
+if ((Compare-Semver -Left "${DOCKER_VERSION}" -Right "19.03") -gt 0) {
+    try {
+        $dockerConfiguration["max-download-attempts"] = [int]($DOCKER_CONFIGURATION_MAX_DOWNLOAD_ATTEMPTS)
+    } catch {
+        $dockerConfiguration["max-download-attempts"] = 10
+    }
+}
 if (-not [string]::IsNullOrEmpty($DOCKER_CONFIGURATION_REGISTRY_MIRRORS)) {
-  $dockerConfiguration["registry-mirrors"] = $DOCKER_CONFIGURATION_REGISTRY_MIRRORS -split ","
+    $dockerConfiguration["registry-mirrors"] = @($DOCKER_CONFIGURATION_REGISTRY_MIRRORS -split ",")
 }
 $dockerConfiguration | ConvertTo-Json -Depth 32 -Compress | Out-File -FilePath "${env:ProgramData}\docker\config\daemon.json" -Encoding ascii -Force
 
 # validate docker version
 if (Test-Command -Command "dockerd") {
-    $dockerVersionActual = $(Execute-Binary -FilePath "docker" -ArgumentList @("info"; "--format"; "`"{{ .ServerVersion }}`""))
+    $dockerVersionActualOutput = $(Execute-Binary -FilePath "dockerd" -ArgumentList @("--version"))
+    $dockerVersionActual = "0"
+    try {
+        $dockerVersionActual = [regex]::matches($dockerVersionActualOutput, '^Docker version (?<Version>.*), build.*') | Foreach-Object { $_.Groups['Version'].Value }
+    } catch {}
     $dockerVersionExpected = "${DOCKER_VERSION}"
     # Expected <= Actual
     if ((Compare-Semver -Left $dockerVersionExpected -Right $dockerVersionActual) -ge 0) {
@@ -354,7 +366,7 @@ if (Test-Command -Command "dockerd") {
             $service = Get-Service -Name "docker" -ErrorAction Ignore
         }
         if (-not $service) {
-            Log-Fatal "Found Docker daemon, but faild to register as a Windows Service"
+            Log-Fatal "Found Docker daemon, but failed to register as a Windows Service"
         }
         $service | Where-Object {$_.StartType -ne "Automatic"} | Set-Service -StartupType Automatic | Out-Null
         $service | Where-Object {$_.Status -ne "Running"} | Start-Service -ErrorAction Ignore -WarningAction Ignore | Out-Null
@@ -389,7 +401,7 @@ if ([string]::IsNullOrEmpty($DOCKER_DOWNLOAD_URI)) {
             if ($DOCKER_VERSION -eq "cs") {
                 $dockerVersionJson = $dockerIdxJson | Select-Object -ErrorAction Ignore -ExpandProperty "versions" | Select-Object -ErrorAction Ignore -ExpandProperty $($dockerIdxJson | Select-Object -ErrorAction Ignore -ExpandProperty "channels" | Select-Object -ErrorAction Ignore -ExpandProperty $($dockerIdxJson.channels | Select-Object -ErrorAction Ignore -ExpandProperty "cs" | Select-Object -ErrorAction Ignore -ExpandProperty "alias") | Select-Object -ErrorAction Ignore -ExpandProperty "version")
                 if (-not $dockerVersionJson) {
-                    Log-Fatal "Could not find default Docker version, please indicate a specifial version after viewing: https://dockermsft.blob.core.windows.net/dockercontainer/DockerMsftIndex.json"
+                    Log-Fatal "Could not find default Docker version, please indicate a specific version after viewing: https://dockermsft.blob.core.windows.net/dockercontainer/DockerMsftIndex.json"
                 }
                 $DOCKER_DOWNLOAD_URI = $dockerVersionJson.url
             } else {
@@ -417,7 +429,7 @@ if ($service) {
 Log-Info "Expanding the Docker archive ..."
 $removing = $true
 # NB(thxCode): it seems like a bug on 1903,
-# we cannot overwrite the binaries forcely in one time.
+# we cannot overwrite the binaries forcibly in one time.
 # --- LEGACY_PROTECTION ---
 while ($removing) {
     try {
@@ -435,7 +447,7 @@ Log-Info "Refreshing the environment path with the Docker location ..."
 Add-MachineEnvironmentPath -Path "${env:ProgramFiles}\docker"
 
 Log-Info "Registering the Docker to Windows Service ..."
-dockerd --register-service --experimental 2>&1 | Out-Null
+dockerd --register-service 2>&1 | Out-Null
 $service = Get-Service -Name "docker" -ErrorAction Ignore
 if (-not $service) {
     Log-Fatal "Failed to register Docker as a Windows Service"
