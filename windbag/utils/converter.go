@@ -196,3 +196,23 @@ func ToStringStringMap(i interface{}) map[string]string {
 	}
 	return ret
 }
+
+// ToStringStringMapSlice tries to convert an interface to `[]map[string]string`.
+func ToStringStringMapSlice(i interface{}) []map[string]string {
+	var s = ToInterfaceSlice(i)
+	var r = make([]map[string]string, 0, len(s))
+	for i := range s {
+		r = append(r, ToStringStringMap(s[i]))
+	}
+	return r
+}
+
+// ToStringInterfaceMapSlice tries to convert an interface to `[]map[string]interface{}`.
+func ToStringInterfaceMapSlice(i interface{}) []map[string]interface{} {
+	var s = ToInterfaceSlice(i)
+	var r = make([]map[string]interface{}, 0, len(s))
+	for i := range s {
+		r = append(r, ToStringInterfaceMap(s[i]))
+	}
+	return r
+}

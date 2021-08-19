@@ -728,11 +728,10 @@ func resourceWindbagImageRead(ctx context.Context, d *schema.ResourceData, meta 
 		}(),
 	}
 	var extraBuildArgsMapper = make(map[string]map[string]*string)
-	for _, mapper := range utils.ToInterfaceSlice(d.Get("release_build_arg_mapper")) {
-		var buildArgsMapper = utils.ToStringInterfaceMap(mapper)
-		var buildRelease = utils.ToString(buildArgsMapper["release"])
+	for _, mapper := range utils.ToStringInterfaceMapSlice(d.Get("build_arg_release_mapper")) {
+		var buildRelease = utils.ToString(mapper["release"])
 		var buildArgs = make(map[string]*string)
-		for k, v := range utils.ToStringStringMap(buildArgsMapper["build_arg"]) {
+		for k, v := range utils.ToStringStringMap(mapper["build_arg"]) {
 			buildArgs[k] = &v
 		}
 		extraBuildArgsMapper[buildRelease] = buildArgs
