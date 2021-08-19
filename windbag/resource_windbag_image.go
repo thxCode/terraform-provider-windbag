@@ -722,18 +722,15 @@ func resourceWindbagImageRead(ctx context.Context, d *schema.ResourceData, meta 
 		BuildArgs: func() map[string]*string {
 			var args = map[string]*string{}
 			for argName, argVal := range utils.ToStringStringMap(d.Get("build_arg")) {
-				args[argName] = &argVal
+				args[argName] = utils.StringPointer(argVal)
 			}
 			return args
 		}(),
 	}
-	var extraBuildArgsMapper = make(map[string]map[string]*string)
+	var extraBuildArgsMapper = make(map[string]map[string]string)
 	for _, mapper := range utils.ToStringInterfaceMapSlice(d.Get("build_arg_release_mapper")) {
 		var buildRelease = utils.ToString(mapper["release"])
-		var buildArgs = make(map[string]*string)
-		for k, v := range utils.ToStringStringMap(mapper["build_arg"]) {
-			buildArgs[k] = &v
-		}
+		var buildArgs = utils.ToStringStringMap(mapper["build_arg"])
 		extraBuildArgsMapper[buildRelease] = buildArgs
 	}
 	eg, egctx := errgroup.WithContext(ctx)
@@ -767,15 +764,15 @@ func resourceWindbagImageRead(ctx context.Context, d *schema.ResourceData, meta 
 				var command = func(opts types.ImageBuildOptions) string {
 					// append build-args
 					var buildArgs = make(map[string]*string, len(opts.BuildArgs))
-					for k, v := range buildArgs {
-						buildArgs[k] = v
+					for argName, argVal := range buildArgs {
+						buildArgs[argName] = utils.DeepCopyStringPointer(argVal)
 					}
 					// NB(thxCode): Deprecated, replace with WINDBAGRELEASE
 					buildArgs["RELEASEID"] = &workerRelease
 					buildArgs["WINDBAGRELEASE"] = &workerRelease
 					if extraBuildArgs, exist := extraBuildArgsMapper[workerRelease]; exist {
-						for k, v := range extraBuildArgs {
-							buildArgs["WINDBAGRELEASE_"+k] = v
+						for argName, argVal := range extraBuildArgs {
+							buildArgs["WINDBAGRELEASE_"+argName] = utils.StringPointer(argVal)
 						}
 					}
 					opts.BuildArgs = buildArgs
