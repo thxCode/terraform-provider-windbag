@@ -3,11 +3,12 @@ package docker
 import (
 	"bytes"
 	"fmt"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
-	"github.com/stretchr/testify/assert"
 	"io"
 	"os"
 	"testing"
+
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestInjectTargetPlatformArgsToDockerfile(t *testing.T) {
