@@ -219,6 +219,39 @@ function Execute-Binary
     return $ret
 }
 
+function Test-Directory
+{
+  param (
+    [parameter(Mandatory = $true, ValueFromPipeline = $true)] [string]$Path
+  )
+  return Test-Path -Path $Path -PathType Container
+}
+
+function Create-Directory
+{
+  param (
+    [parameter(Mandatory = $true, ValueFromPipeline = $true)] [string]$Path
+  )
+
+  if (Test-Path -Path $Path) {
+    if (Test-Directory -Path $Path) {
+      return
+    } else {
+      Remove-Item -Force -Path $Path -ErrorAction Ignore | Out-Null
+    }
+  }
+  New-Item -Force -ItemType Directory -Path $Path -ErrorAction Ignore | Out-Null
+}
+
+function Create-ParentDirectory
+{
+  param (
+    [parameter(Mandatory = $true, ValueFromPipeline = $true)] [string]$Path
+  )
+
+  Create-Directory -Path (Split-Path -Path $Path) | Out-Null
+}
+
 function Compare-Semver
 {
     param (
@@ -317,7 +350,8 @@ if (-not (Test-Command -Command "unpigz")) {
 }
 
 # generate docker configuration
-$dockerConfiguration = Get-Content -Path "${env:ProgramData}\docker\config\daemon.json" -ErrorAction Ignore | ConvertFrom-Json | ConvertTo-Hashtable
+$dockerConfigurationPath = "${env:ProgramData}\docker\config\daemon.json"
+$dockerConfiguration = Get-Content -Path "${dockerConfigurationPath}" -ErrorAction Ignore | ConvertFrom-Json | ConvertTo-Hashtable
 if (-not $dockerConfiguration) {
     $dockerConfiguration = @{}
 }
@@ -347,7 +381,8 @@ if ((Compare-Semver -Left "${DOCKER_VERSION}" -Right "19.03") -gt 0) {
 if (-not [string]::IsNullOrEmpty($DOCKER_CONFIGURATION_REGISTRY_MIRRORS)) {
     $dockerConfiguration["registry-mirrors"] = @($DOCKER_CONFIGURATION_REGISTRY_MIRRORS -split ",")
 }
-$dockerConfiguration | ConvertTo-Json -Depth 32 -Compress | Out-File -FilePath "${env:ProgramData}\docker\config\daemon.json" -Encoding ascii -Force
+Create-ParentDirectory -Path "${dockerConfigurationPath}"
+$dockerConfiguration | ConvertTo-Json -Depth 32 -Compress | Out-File -FilePath "${dockerConfigurationPath}" -Encoding ascii -Force
 
 # validate docker version
 if (Test-Command -Command "dockerd") {
@@ -455,8 +490,21 @@ if (-not $service) {
 $service | Where-Object {$_.StartType -ne "Automatic"} | Set-Service -StartupType Automatic | Out-Null
 
 Log-Info "Verifying the required Windows Container Feature ..."
-$iwfr = (Install-WindowsFeature -Confirm:$false -Name "Containers")
-if ($iwfr.RestartNeeded -ne "No") {
+$installedType = Get-ComputerInfo | Select-Object -ErrorAction Ignore -ExpandProperty "WindowsInstallationType"
+$restartNeeded = ""
+if ($installedType -eq "Client") {
+    try {
+        $restartNeeded = Enable-WindowsOptionalFeature -Online -FeatureName "Containers" | Select-Object -ErrorAction Ignore -ExpandProperty "RestartNeeded"
+        if ("${restartNeeded}" -eq "False") {
+            $restartNeeded = "No"
+        }
+    } catch {}
+} else {
+    try {
+        $restartNeeded = Install-WindowsFeature -Confirm:$false -Name "Containers" | Select-Object -ErrorAction Ignore -ExpandProperty "RestartNeeded"
+    } catch {}
+}
+if ($restartNeeded -ne "No") {
     Log-Warn "Restart computer as installed Container Windows Feature ..."
     Restart-Computer
     exit 1
