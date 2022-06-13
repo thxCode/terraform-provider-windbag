@@ -18,10 +18,10 @@ require (
 	github.com/moby/sys/symlink v0.1.0 // indirect
 	github.com/moby/term v0.0.0-20201216013528-df9cb8a40635 // indirect
 	github.com/pkg/errors v0.9.1
-	github.com/pkg/sftp v1.13.0
+	github.com/pkg/sftp v1.13.5
 	github.com/sirupsen/logrus v1.8.1
 	github.com/stretchr/testify v1.7.0
-	golang.org/x/crypto v0.0.0-20210421170649-83a5a9bb288b
+	golang.org/x/crypto v0.0.0-20211215153901-e495a2d5b3d3
 	golang.org/x/sync v0.0.0-20201020160332-67f06af15bc9
 	gotest.tools/v3 v3.0.3 // indirect
 )
