@@ -525,6 +525,7 @@ func flattener(flattenList cty.Value) ([]cty.Value, []cty.ValueMarks, bool) {
 	if len(flattenListMarks) > 0 {
 		markses = append(markses, flattenListMarks)
 	}
+
 	if !flattenList.Length().IsKnown() {
 		// If we don't know the length of what we're flattening then we can't
 		// predict the length of our result yet either.
@@ -538,11 +539,11 @@ func flattener(flattenList cty.Value) ([]cty.Value, []cty.ValueMarks, bool) {
 
 		// Any dynamic types could result in more collections that need to be
 		// flattened, so the type cannot be known.
-		if val.Type().Equals(cty.DynamicPseudoType) {
+		if val == cty.DynamicVal {
 			isKnown = false
 		}
 
-		if val.Type().IsListType() || val.Type().IsSetType() || val.Type().IsTupleType() {
+		if !val.IsNull() && (val.Type().IsListType() || val.Type().IsSetType() || val.Type().IsTupleType()) {
 			if !val.IsKnown() {
 				isKnown = false
 				_, unknownMarks := val.Unmark()
